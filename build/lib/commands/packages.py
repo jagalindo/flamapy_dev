@@ -2,17 +2,21 @@ import click
 import subprocess
 import os
 
-PARENT_DIR = ".."
 
 @click.group()
-def pip():
+@click.pass_context
+def pip(ctx):
     """Commands for managing Python dependencies."""
+    ctx.ensure_object(dict)
+    ctx.obj['PARENT_DIR'] = ctx.obj.get('PARENT_DIR', '')
     pass
 
 @click.command()
-def install():
+@click.pass_context
+def install(ctx):
     """Install dependencies from each directory's setup.py."""
-    for root, dirs, files in os.walk(PARENT_DIR):
+    parent_dir = ctx.obj['PARENT_DIR']
+    for root, dirs, files in os.walk(parent_dir):
         if "setup.py" in files:
             click.echo(f"Installing package in {root}...")
             subprocess.run(["pip", "install", "."], cwd=root, check=True)
@@ -20,9 +24,11 @@ def install():
             click.echo(f"No setup.py found in {root}.")
 
 @click.command()
-def update():
+@click.pass_context
+def update(ctx):
     """Update dependencies from each directory's setup.py."""
-    for root, dirs, files in os.walk(PARENT_DIR):
+    parent_dir = ctx.obj['PARENT_DIR']
+    for root, dirs, files in os.walk(parent_dir):
         if "setup.py" in files:
             click.echo(f"Updating package in {root}...")
             subprocess.run(["pip", "install", "--upgrade", "."], cwd=root, check=True)
@@ -30,9 +36,11 @@ def update():
             click.echo(f"No setup.py found in {root}.")
 
 @click.command()
-def remove():
+@click.pass_context
+def remove(ctx):
     """Uninstall packages from each directory's setup.py."""
-    for root, dirs, files in os.walk(PARENT_DIR):
+    parent_dir = ctx.obj['PARENT_DIR']
+    for root, dirs, files in os.walk(parent_dir):
         if "setup.py" in files:
             click.echo(f"Uninstalling package in {root}...")
             subprocess.run(["pip", "uninstall", "-y", "."], cwd=root, check=True)
