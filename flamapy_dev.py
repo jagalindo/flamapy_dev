@@ -1,5 +1,5 @@
 import click
-from developer.flamapy_dev import git, pip
+from commands import git, pip
 
 @click.group()
 def cli():
