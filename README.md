@@ -143,7 +143,3 @@ Feel free to open issues or submit pull requests for improvements or bug fixes. 
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-This updated `README.md` reflects the new file structure and provides instructions for using the CLI tool organized by the `flamapy_dev.py` script and the command modules within the `commands` directory. Adjust the content as needed based on any additional details or changes in your project.
