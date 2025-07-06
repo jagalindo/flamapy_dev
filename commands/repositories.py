@@ -29,14 +29,17 @@ def clone(ctx):
 @git.command()
 @click.pass_context
 def switch_develop(ctx):
-    """Switch all repositories to the develop branch."""
+    """Switch all repositories to the develop branch if it exists."""
     repos = ctx.obj['REPOS']
     parent_dir = ctx.obj['PARENT_DIR']
     for repo_name in repos.keys():
         repo_dir = os.path.join(parent_dir, repo_name)
         if os.path.isdir(os.path.join(repo_dir, ".git")):
             click.echo(f"Switching {repo_name} to branch develop...")
-            subprocess.run(["git", "switch", "develop"], cwd=repo_dir, check=True)
+            if subprocess.run(["git", "show-ref", "--verify", "--quiet", "refs/heads/develop"], cwd=repo_dir).returncode == 0:
+                subprocess.run(["git", "switch", "develop"], cwd=repo_dir, check=True)
+            else:
+                click.echo("Branch 'develop' does not exist.")
         else:
             click.echo(f"{repo_name} does not exist.")
 
