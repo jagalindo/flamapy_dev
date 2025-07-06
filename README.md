@@ -71,16 +71,9 @@ The following commands are available for managing Git repositories:
   Switches all repositories to the `main` branch if it exists; otherwise, switches to `master`.
 
   ```bash
-  python flamapy_dev.py git switch_main_or_master
+  python flamapy_dev.py git switch_main
   ```
 
-- **Pull Latest Changes**
-
-  Pulls the latest changes from all repositories.
-
-  ```bash
-  python flamapy_dev.py git pull
-  ```
 
 - **Delete Repositories**
 
