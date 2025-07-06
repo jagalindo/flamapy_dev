@@ -40,10 +40,10 @@ def switch_develop(ctx):
         else:
             click.echo(f"{repo_name} does not exist.")
 
-@click.command()
+@click.command(name="switch_main_or_master")
 @click.pass_context
-def switch_main(ctx):
-    """Switch all repositories to the main or master branch."""
+def switch_main_or_master(ctx):
+    """Switch all repositories to the main branch if it exists, otherwise to master."""
     repos = ctx.obj['REPOS']
     parent_dir = ctx.obj['PARENT_DIR']
     for repo_name in repos.keys():
@@ -58,6 +58,20 @@ def switch_main(ctx):
                 subprocess.run(["git", "switch", "master"], cwd=repo_dir, check=True)
             else:
                 click.echo(f"Neither 'main' nor 'master' branch exists for {repo_name}.")
+        else:
+            click.echo(f"{repo_name} does not exist.")
+
+@click.command()
+@click.pass_context
+def pull(ctx):
+    """Pull the latest changes for all repositories."""
+    repos = ctx.obj['REPOS']
+    parent_dir = ctx.obj['PARENT_DIR']
+    for repo_name in repos.keys():
+        repo_dir = os.path.join(parent_dir, repo_name)
+        if os.path.isdir(os.path.join(repo_dir, ".git")):
+            click.echo(f"Pulling latest changes for {repo_name}...")
+            subprocess.run(["git", "pull"], cwd=repo_dir, check=True)
         else:
             click.echo(f"{repo_name} does not exist.")
 
@@ -91,6 +105,7 @@ def delete(ctx):
 
 git.add_command(clone)
 git.add_command(switch_develop)
-git.add_command(switch_main)
+git.add_command(switch_main_or_master)
+git.add_command(pull)
 git.add_command(delete)
 git.add_command(status)

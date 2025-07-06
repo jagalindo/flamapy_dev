@@ -9,19 +9,19 @@ flamapy_dev/
 │
 ├── flamapy_dev.py
 └── commands/
-    ├── git_commands.py
-    └── pip_commands.py
+├── repositories.py
+└── packages.py
 ```
 
 ### `flamapy_dev.py`
 
 The main entry point for the CLI tool. It organizes and provides access to Git and pip commands.
 
-### `commands/git_commands.py`
+### `commands/repositories.py`
 
 Contains commands related to Git operations such as cloning repositories, switching branches, pulling updates, and deleting directories.
 
-### `commands/pip_commands.py`
+### `commands/packages.py`
 
 Contains commands for managing Python dependencies by iterating through directories and executing `pip install .`, `pip install --upgrade .`, and `pip uninstall -y .` commands.
 
@@ -52,7 +52,7 @@ The following commands are available for managing Git repositories:
 
 - **Clone Repositories**
 
-  Clones all repositories defined in `git_commands.py` into the parent directory.
+  Clones all repositories defined in `repositories.py` into the parent directory.
 
   ```bash
   python flamapy_dev.py git clone
@@ -84,7 +84,7 @@ The following commands are available for managing Git repositories:
 
 - **Delete Repositories**
 
-  Deletes all repository directories defined in `git_commands.py`.
+  Deletes all repository directories defined in `repositories.py`.
 
   ```bash
   python flamapy_dev.py git delete
@@ -128,11 +128,11 @@ The following commands are available for managing Python dependencies:
 
 ## Configuration
 
-### `commands/git_commands.py`
+### `commands/repositories.py`
 
 Define your repositories and parent directory in this file. Update the `REPOS` dictionary with your repositories and set the `PARENT_DIR` to the appropriate directory.
 
-### `commands/pip_commands.py`
+### `commands/packages.py`
 
 Set the `PARENT_DIR` to the parent directory where your Python packages are located. This script will search for `setup.py` files in subdirectories to manage the packages.
 

@@ -52,3 +52,6 @@ def cli(ctx, parent_dir):
 # Add command groups
 cli.add_command(git)
 cli.add_command(pip)
+
+if __name__ == "__main__":
+    cli()
