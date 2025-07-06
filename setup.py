@@ -8,7 +8,7 @@ def parse_requirements(filename):
 setup(
     name='flamapy-dev',
     version='0.1',
-    description='CLI tool for managing Git repositories and Python packages for the flamapy distribution',
+    description='CLI tool for managing Git repositories and Python packages for the Flamapy distribution',
     author='José A. Galindo',
     author_email='jagalindo@us.es',
     packages=find_packages(),  # Ensure this matches your package layout
