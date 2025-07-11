@@ -61,6 +61,7 @@ The following commands are available for managing Git repositories:
 - **Switch to Develop Branch**
 
   Switches all repositories to the `develop` branch if it exists.
+  If the branch only exists on the remote, it will be created locally first.
 
   ```bash
   python flamapy_dev.py git switch_develop
