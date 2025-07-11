@@ -38,6 +38,9 @@ def switch_develop(ctx):
             click.echo(f"Switching {repo_name} to branch develop...")
             if subprocess.run(["git", "show-ref", "--verify", "--quiet", "refs/heads/develop"], cwd=repo_dir).returncode == 0:
                 subprocess.run(["git", "switch", "develop"], cwd=repo_dir, check=True)
+            elif subprocess.run(["git", "ls-remote", "--exit-code", "--heads", "origin", "develop"], cwd=repo_dir).returncode == 0:
+                subprocess.run(["git", "fetch", "origin"], cwd=repo_dir, check=True)
+                subprocess.run(["git", "switch", "-c", "develop", "origin/develop"], cwd=repo_dir, check=True)
             else:
                 click.echo("Branch 'develop' does not exist.")
         else:

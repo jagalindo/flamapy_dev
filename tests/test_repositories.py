@@ -69,3 +69,51 @@ def test_switch_main_or_master_uses_master():
     assert result.exit_code == 0
     switch_calls = [call.args[0] for call in run_mock.call_args_list if call.args and call.args[0][0:2] == ['git', 'switch']]
     assert switch_calls == [['git', 'switch', 'master']]
+
+
+def test_switch_develop_creates_local_from_remote():
+    runner = CliRunner()
+    repos = {'repo1': 'url1'}
+    obj = {'REPOS': repos, 'PARENT_DIR': '/tmp'}
+
+    def side_effect(args, cwd=None, check=False, **kwargs):
+        if args[0:3] == ['git', 'show-ref', '--verify']:
+            return DummyProcess(1)
+        elif args[0:3] == ['git', 'ls-remote', '--exit-code']:
+            return DummyProcess(0)
+        elif args[0:2] == ['git', 'switch']:
+            return DummyProcess(0)
+        elif args[0:2] == ['git', 'fetch']:
+            return DummyProcess(0)
+        return DummyProcess(0)
+
+    with patch('commands.repositories.os.path.isdir', return_value=True), \
+         patch('commands.repositories.subprocess.run', side_effect=side_effect) as run_mock:
+        result = runner.invoke(repositories.switch_develop, obj=obj)
+
+    assert result.exit_code == 0
+    switch_calls = [call.args[0] for call in run_mock.call_args_list if call.args and call.args[0][0:2] == ['git', 'switch']]
+    assert switch_calls == [['git', 'switch', '-c', 'develop', 'origin/develop']]
+
+
+def test_switch_develop_branch_missing_everywhere():
+    runner = CliRunner()
+    repos = {'repo1': 'url1'}
+    obj = {'REPOS': repos, 'PARENT_DIR': '/tmp'}
+
+    def side_effect(args, cwd=None, check=False, **kwargs):
+        if args[0:3] == ['git', 'show-ref', '--verify']:
+            return DummyProcess(1)
+        elif args[0:3] == ['git', 'ls-remote', '--exit-code']:
+            return DummyProcess(1)
+        elif args[0:2] == ['git', 'switch']:
+            return DummyProcess(0)
+        return DummyProcess(0)
+
+    with patch('commands.repositories.os.path.isdir', return_value=True), \
+         patch('commands.repositories.subprocess.run', side_effect=side_effect) as run_mock:
+        result = runner.invoke(repositories.switch_develop, obj=obj)
+
+    assert result.exit_code == 0
+    switch_calls = [call.args[0] for call in run_mock.call_args_list if call.args and call.args[0][0:2] == ['git', 'switch']]
+    assert switch_calls == []
