@@ -124,10 +124,13 @@ def test_tag_repo_creates_and_pushes_tag():
     repos = {'repo1': 'url1'}
     obj = {'REPOS': repos, 'PARENT_DIR': '/tmp'}
     with patch('commands.repositories.os.path.isdir', return_value=True), \
+         patch('commands.repositories.os.path.exists', return_value=True), \
+         patch('commands.repositories.wait_for_requirements') as wait_mock, \
          patch('commands.repositories.subprocess.run') as run_mock:
         result = runner.invoke(repositories.tag_repo, ['v1.0'], obj=obj)
 
     assert result.exit_code == 0
+    wait_mock.assert_called_once()
     expected = [
         ['git', 'tag', 'v1.0'],
         ['git', 'push', 'origin', 'v1.0']
@@ -141,8 +144,32 @@ def test_tag_repo_missing_repo():
     repos = {'repo1': 'url1'}
     obj = {'REPOS': repos, 'PARENT_DIR': '/tmp'}
     with patch('commands.repositories.os.path.isdir', return_value=False), \
+         patch('commands.repositories.wait_for_requirements') as wait_mock, \
          patch('commands.repositories.subprocess.run') as run_mock:
         result = runner.invoke(repositories.tag_repo, ['v1.0'], obj=obj)
 
     assert result.exit_code == 0
     run_mock.assert_not_called()
+    wait_mock.assert_not_called()
+
+
+def test_tag_repo_processes_in_defined_order():
+    runner = CliRunner()
+    repos = {
+        'first': 'url1',
+        'second': 'url2',
+        'third': 'url3'
+    }
+    obj = {'REPOS': repos, 'PARENT_DIR': '/tmp'}
+    with patch('commands.repositories.os.path.isdir', return_value=True), \
+         patch('commands.repositories.os.path.exists', return_value=False), \
+         patch('commands.repositories.subprocess.run') as run_mock:
+        result = runner.invoke(repositories.tag_repo, ['v1.0'], obj=obj)
+
+    assert result.exit_code == 0
+    expected_cwds = []
+    for name in repos:
+        repo_dir = os.path.join('/tmp', name)
+        expected_cwds.extend([repo_dir, repo_dir])
+    cwds = [c.kwargs['cwd'] for c in run_mock.call_args_list]
+    assert cwds == expected_cwds

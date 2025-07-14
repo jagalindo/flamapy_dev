@@ -78,7 +78,7 @@ def bump(ctx, new_version):
     repo_info = {}
 
     # Gather info for each repo folder
-    for folder in repos.keys():
+    for folder in repos:
         repo = Path(parent_dir) / folder
         setup_py = repo / 'setup.py'
         if not setup_py.exists():

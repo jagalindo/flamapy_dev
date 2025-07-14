@@ -15,7 +15,7 @@ def pip(ctx):
 def process_directories(ctx, command):
     parent_dir = ctx.obj['PARENT_DIR']
     repos = ctx.obj['REPOS']
-    for repo_name in repos.keys():
+    for repo_name in repos:
         repo_dir = os.path.join(parent_dir, repo_name)
         setup_path = os.path.join(repo_dir, "setup.py")
 
