@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [tool.ruff]
 line-length = 100  # Matches max-line-length from pycodestyle
 target-version = "py38"  # Adjust if using another Python version
