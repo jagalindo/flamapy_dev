@@ -1,7 +1,9 @@
 from .packages import pip
 from .repositories import git
 from .versions import version
+from .make import make
 
-__all__ = ['pip', 
+__all__ = ['pip',
            'git',
-           'version']
+           'version',
+           'make']
