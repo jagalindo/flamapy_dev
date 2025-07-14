@@ -2,18 +2,19 @@ import click
 import subprocess
 import os
 
+
 @click.group()
 @click.pass_context
 def make(ctx):
     """Run make targets on all repositories."""
     ctx.ensure_object(dict)
-    ctx.obj['PARENT_DIR'] = ctx.obj.get('PARENT_DIR', '')
-    ctx.obj['REPOS'] = ctx.obj.get('REPOS', {})
+    ctx.obj["PARENT_DIR"] = ctx.obj.get("PARENT_DIR", "")
+    ctx.obj["REPOS"] = ctx.obj.get("REPOS", {})
 
 
 def _run_make(ctx, target: str):
-    parent_dir = ctx.obj['PARENT_DIR']
-    repos = ctx.obj['REPOS']
+    parent_dir = ctx.obj["PARENT_DIR"]
+    repos = ctx.obj["REPOS"]
     for repo_name in repos:
         repo_dir = os.path.join(parent_dir, repo_name)
         if os.path.isdir(repo_dir):
