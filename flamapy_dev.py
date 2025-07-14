@@ -1,18 +1,19 @@
 import click
 from commands import git, pip, version, make
 import os
+from collections import OrderedDict
 
 # Define the repositories and their URLs
-REPOS = {
-    "flamapy_fw": "https://github.com/flamapy/flamapy_fw.git",
-    "fm_metamodel": "https://github.com/flamapy/fm_metamodel.git",
-    "pysat_metamodel": "https://github.com/flamapy/pysat_metamodel.git",
-    "bdd_metamodel": "https://github.com/flamapy/bdd_metamodel.git",
-    "flamapy": "https://github.com/flamapy/flamapy.git",
-    #"flamapy_rest": "https://github.com/flamapy/flamapy_rest.git",
-    #"flamapy_docs": "https://github.com/flamapy/flamapy_docs.git",
-    #"flamapy.github.io": "https://github.com/flamapy/flamapy.github.io.git"
-}
+REPOS = OrderedDict([
+    ("flamapy_fw", "https://github.com/flamapy/flamapy_fw.git"),
+    ("fm_metamodel", "https://github.com/flamapy/fm_metamodel.git"),
+    ("pysat_metamodel", "https://github.com/flamapy/pysat_metamodel.git"),
+    ("bdd_metamodel", "https://github.com/flamapy/bdd_metamodel.git"),
+    ("flamapy", "https://github.com/flamapy/flamapy.git"),
+    #("flamapy_rest", "https://github.com/flamapy/flamapy_rest.git"),
+    #("flamapy_docs", "https://github.com/flamapy/flamapy_docs.git"),
+    #("flamapy.github.io", "https://github.com/flamapy/flamapy.github.io.git"),
+])
 
 # Define the default parent directory as the current directory.
 DEFAULT_PARENT_DIR = os.curdir

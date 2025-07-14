@@ -2,6 +2,62 @@ import click
 import subprocess
 import os
 import shutil
+import time
+import json
+from urllib import request, error
+from packaging.requirements import Requirement
+
+
+def _parse_requirements(req_file: str):
+    """Return a list of Requirement objects for the given requirements file."""
+    requirements = []
+    if not os.path.exists(req_file):
+        return requirements
+    with open(req_file, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            try:
+                requirements.append(Requirement(line))
+            except Exception:
+                continue
+    return requirements
+
+
+def _package_available(req: Requirement) -> bool:
+    """Return True if the given requirement is satisfied by a version on PyPI."""
+    url = f"https://pypi.org/pypi/{req.name}/json"
+    try:
+        with request.urlopen(url, timeout=10) as resp:
+            if resp.status != 200:
+                return False
+            data = json.load(resp)
+    except error.URLError:
+        return False
+    except Exception:
+        return False
+    if not req.specifier:
+        return True
+    releases = data.get("releases", {})
+    for ver in releases.keys():
+        try:
+            if req.specifier.contains(ver, prereleases=True):
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def wait_for_requirements(req_file: str, check_interval: int = 10):
+    """Block until all requirements from req_file are available on PyPI."""
+    requirements = _parse_requirements(req_file)
+    if not requirements:
+        return
+    while True:
+        if all(_package_available(r) for r in requirements):
+            return
+        time.sleep(check_interval)
 
 
 @click.group()
@@ -32,7 +88,7 @@ def switch_develop(ctx):
     """Switch all repositories to the develop branch if it exists."""
     repos = ctx.obj['REPOS']
     parent_dir = ctx.obj['PARENT_DIR']
-    for repo_name in repos.keys():
+    for repo_name in repos:
         repo_dir = os.path.join(parent_dir, repo_name)
         if os.path.isdir(os.path.join(repo_dir, ".git")):
             click.echo(f"Switching {repo_name} to branch develop...")
@@ -52,7 +108,7 @@ def switch_main(ctx):
     """Switch all repositories to the main branch if it exists, otherwise to master."""
     repos = ctx.obj['REPOS']
     parent_dir = ctx.obj['PARENT_DIR']
-    for repo_name in repos.keys():
+    for repo_name in repos:
         repo_dir = os.path.join(parent_dir, repo_name)
         if os.path.isdir(os.path.join(repo_dir, ".git")):
             click.echo(f"Checking branches for {repo_name}...")
@@ -73,7 +129,7 @@ def pull(ctx):
     """Pull the latest changes for all repositories."""
     repos = ctx.obj['REPOS']
     parent_dir = ctx.obj['PARENT_DIR']
-    for repo_name in repos.keys():
+    for repo_name in repos:
         repo_dir = os.path.join(parent_dir, repo_name)
         if os.path.isdir(os.path.join(repo_dir, ".git")):
             click.echo(f"Pulling latest changes for {repo_name}...")
@@ -87,7 +143,7 @@ def status(ctx):
     """Show status of all repositories."""
     repos = ctx.obj['REPOS']
     parent_dir = ctx.obj['PARENT_DIR']
-    for repo_name in repos.keys():
+    for repo_name in repos:
         repo_dir = os.path.join(parent_dir, repo_name)
         if os.path.isdir(os.path.join(repo_dir, ".git")):
             click.echo(f"Status of {repo_name}:")
@@ -101,7 +157,7 @@ def delete(ctx):
     """Delete all repository directories."""
     repos = ctx.obj['REPOS']
     parent_dir = ctx.obj['PARENT_DIR']
-    for repo_name in repos.keys():
+    for repo_name in repos:
         repo_dir = os.path.join(parent_dir, repo_name)
         if os.path.isdir(repo_dir):
             click.echo(f"Deleting directory {repo_dir}...")
@@ -117,9 +173,13 @@ def tag_repo(ctx, tag):
     """Create and push a Git tag to all repositories."""
     repos = ctx.obj['REPOS']
     parent_dir = ctx.obj['PARENT_DIR']
-    for repo_name in repos.keys():
+    for repo_name in repos:
         repo_dir = os.path.join(parent_dir, repo_name)
         if os.path.isdir(os.path.join(repo_dir, '.git')):
+            req_file = os.path.join(repo_dir, 'requirements.txt')
+            if os.path.exists(req_file):
+                click.echo(f"Waiting for PyPI packages of {repo_name}...")
+                wait_for_requirements(req_file)
             click.echo(f"Tagging {repo_name} with {tag}...")
             subprocess.run(['git', 'tag', tag], cwd=repo_dir, check=True)
             click.echo(f"Pushing tag {tag} for {repo_name}...")

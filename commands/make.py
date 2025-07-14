@@ -14,7 +14,7 @@ def make(ctx):
 def _run_make(ctx, target: str):
     parent_dir = ctx.obj['PARENT_DIR']
     repos = ctx.obj['REPOS']
-    for repo_name in repos.keys():
+    for repo_name in repos:
         repo_dir = os.path.join(parent_dir, repo_name)
         if os.path.isdir(repo_dir):
             click.echo(f"Running 'make {target}' in {repo_dir}")
