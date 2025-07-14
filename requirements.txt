@@ -1,5 +1,5 @@
 click
 bump-my-version==1.2.0
 pytest
-flake8
+ruff
 mypy
