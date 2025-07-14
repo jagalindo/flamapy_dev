@@ -58,23 +58,11 @@ def bump_with_bump_my_version(repo: Path, files: list, new_version: str):
 
 @click.group()
 @click.pass_context
-@click.argument('parent_dir',
-                default=os.curdir,
-                type=click.Path(exists=True, file_okay=False, dir_okay=True, writable=True),
-                required=False)
-def cli(ctx, parent_dir):
-    """Manage flamapy repositories and dependencies."""
-    ctx.ensure_object(dict)
-    ctx.obj['PARENT_DIR'] = parent_dir
-    # REPOS mapping should be provided in main CLI context
-    ctx.obj['REPOS'] = ctx.obj.get('REPOS', {})
-
-
-@cli.group()
-@click.pass_context
 def version(ctx):
     """Commands for managing Python dependencies."""
     ctx.ensure_object(dict)
+    ctx.obj['PARENT_DIR'] = ctx.obj.get('PARENT_DIR', os.curdir)
+    ctx.obj['REPOS'] = ctx.obj.get('REPOS', {})
 
 
 

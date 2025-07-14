@@ -23,7 +23,7 @@ def test_switch_develop_no_branch():
     run_mock.assert_not_called()
 
 
-def test_switch_main_or_master_prefers_main():
+def test_switch_main_prefers_main():
     runner = CliRunner()
     repos = {'repo1': 'url1'}
     obj = {'REPOS': repos, 'PARENT_DIR': '/tmp'}
@@ -40,14 +40,14 @@ def test_switch_main_or_master_prefers_main():
 
     with patch('commands.repositories.os.path.isdir', return_value=True), \
          patch('commands.repositories.subprocess.run', side_effect=side_effect) as run_mock:
-        result = runner.invoke(repositories.switch_main_or_master, obj=obj)
+        result = runner.invoke(repositories.switch_main, obj=obj)
 
     assert result.exit_code == 0
     switch_calls = [call.args[0] for call in run_mock.call_args_list if call.args and call.args[0][0:2] == ['git', 'switch']]
     assert switch_calls == [['git', 'switch', 'main']]
 
 
-def test_switch_main_or_master_uses_master():
+def test_switch_main_uses_master():
     runner = CliRunner()
     repos = {'repo1': 'url1'}
     obj = {'REPOS': repos, 'PARENT_DIR': '/tmp'}
@@ -64,7 +64,7 @@ def test_switch_main_or_master_uses_master():
 
     with patch('commands.repositories.os.path.isdir', return_value=True), \
          patch('commands.repositories.subprocess.run', side_effect=side_effect) as run_mock:
-        result = runner.invoke(repositories.switch_main_or_master, obj=obj)
+        result = runner.invoke(repositories.switch_main, obj=obj)
 
     assert result.exit_code == 0
     switch_calls = [call.args[0] for call in run_mock.call_args_list if call.args and call.args[0][0:2] == ['git', 'switch']]
