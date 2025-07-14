@@ -1,9 +1,11 @@
 from setuptools import setup, find_packages
+from pathlib import Path
 
 
-def parse_requirements(filename):
+def parse_requirements(filename: str) -> list[str]:
     """Parse a requirements file into a list of requirements."""
-    with open(filename, "r") as f:
+    req_path = Path(__file__).resolve().parent / filename
+    with req_path.open("r", encoding="utf-8") as f:
         return [line.strip() for line in f if line.strip() and not line.startswith("#")]
 
 
