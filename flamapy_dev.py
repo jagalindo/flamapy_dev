@@ -14,15 +14,15 @@ REPOS = {
     #"flamapy.github.io": "https://github.com/flamapy/flamapy.github.io.git"
 }
 
-# Define the default parent directory. Current directory is the default.
-DEFAULT_PARENT_DIR = os.path.join(os.curdir)
+# Define the default parent directory as the current directory.
+DEFAULT_PARENT_DIR = os.curdir
 
 @click.group()
 @click.pass_context
 @click.option(
     "--parent-dir",
     "-d",
-    default=os.path.join(os.pardir),
+    default=DEFAULT_PARENT_DIR,
     type=click.Path(exists=True, file_okay=False, dir_okay=True, writable=True),
     show_default=True,
     help="Parent directory where operations should be performed.",

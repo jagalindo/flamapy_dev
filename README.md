@@ -9,39 +9,49 @@ flamapy_dev/
 │
 ├── flamapy_dev.py
 └── commands/
-├── repositories.py
-└── packages.py
+    ├── __init__.py
+    ├── repositories.py
+    ├── packages.py
+    ├── make.py
+    └── versions.py
 ```
 
 ### `flamapy_dev.py`
 
-The main entry point for the CLI tool. It organizes and provides access to Git and pip commands.
+The main entry point for the CLI tool. It organizes and provides access to Git, pip, version, and make commands.
 
 ### `commands/repositories.py`
 
-Contains commands related to Git operations such as cloning repositories, switching branches, pulling updates, and deleting directories.
+Contains commands related to Git operations such as cloning repositories, switching branches, pulling updates, tagging, and deleting directories.
 
 ### `commands/packages.py`
 
 Contains commands for managing Python dependencies by iterating through directories and executing `pip install .`, `pip install --upgrade .`, and `pip uninstall -y .` commands.
 
+### `commands/make.py`
+
+Provides commands that run common `make` targets like `lint`, `test`, and `mypy` across all repositories.
+
+### `commands/versions.py`
+
+Offers a command to bump package versions in all repositories and update internal dependencies accordingly.
+
 ## Setup
 
-### Prerequisites
+Ensure you have Python 3.6 or higher installed.
 
-Ensure you have Python 3.6 or higher installed. You also need to install the `Click` package. Install it using pip:
+Create and activate a new virtual environment:
 
 ```bash
-pip install click
+python -m venv venv
+source venv/bin/activate
 ```
 
-### Installation
-
-Clone this repository:
+Then install the CLI tool with pip (this will also install `Click` and any other
+dependencies):
 
 ```bash
-git clone <repository_url>
-cd <repository_directory>
+pip install flamapy-dev
 ```
 
 ## Usage
@@ -49,14 +59,14 @@ cd <repository_directory>
 ### Git Commands
 
 The following commands are available for managing Git repositories.
-Use `--parent-dir PATH` to specify where the repositories are located (defaults to `..`):
+Use `--parent-dir PATH` to specify where the repositories are located (defaults to the current directory `.`):
 
 - **Clone Repositories**
 
   Clones all repositories defined in `repositories.py` into the parent directory.
 
   ```bash
-  python flamapy_dev.py git clone
+  flamapy-dev git clone
   ```
 
 - **Switch to Develop Branch**
@@ -65,7 +75,7 @@ Use `--parent-dir PATH` to specify where the repositories are located (defaults 
   If the branch only exists on the remote, it will be created locally first.
 
   ```bash
-  python flamapy_dev.py git switch_develop
+  flamapy-dev git switch_develop
   ```
 
 - **Switch to Main or Master Branch**
@@ -73,16 +83,23 @@ Use `--parent-dir PATH` to specify where the repositories are located (defaults 
   Switches all repositories to the `main` branch if it exists; otherwise, switches to `master`.
 
   ```bash
-  python flamapy_dev.py git switch-main
+  flamapy-dev git switch-main
   ```
 
+- **Pull Latest Changes**
+
+  Fetches and merges the latest commits for each repository.
+
+  ```bash
+  flamapy-dev git pull
+  ```
 
 - **Delete Repositories**
 
   Deletes all repository directories defined in `repositories.py`.
 
   ```bash
-  python flamapy_dev.py git delete
+  flamapy-dev git delete
   ```
 
 - **Show Status**
@@ -90,7 +107,15 @@ Use `--parent-dir PATH` to specify where the repositories are located (defaults 
   Shows the status of all repositories.
 
   ```bash
-  python flamapy_dev.py git status
+  flamapy-dev git status
+  ```
+
+- **Tag Repositories**
+
+  Creates and pushes a Git tag to each repository.
+
+  ```bash
+  flamapy-dev git tag v1.0.0
   ```
 
 ### Pip Commands
@@ -102,7 +127,7 @@ The following commands are available for managing Python dependencies:
   Installs packages from `setup.py` in each directory under the parent directory.
 
   ```bash
-  python flamapy_dev.py pip install
+  flamapy-dev pip install
   ```
 
 - **Update Packages**
@@ -110,16 +135,55 @@ The following commands are available for managing Python dependencies:
   Updates packages from `setup.py` in each directory under the parent directory.
 
   ```bash
-  python flamapy_dev.py pip update
+  flamapy-dev pip update
   ```
 
 - **Remove Packages**
 
   Uninstalls packages from `setup.py` in each directory under the parent directory.
 
+
   ```bash
-  python flamapy_dev.py pip remove
+  flamapy-dev pip remove
   ```
+
+### Version Commands
+
+- **Bump Version**
+
+  Updates `setup.py` and `requirements.txt` in all repositories to the provided version.
+
+  ```bash
+  flamapy-dev version bump 1.2.0
+  ```
+
+### Make Commands
+
+Execute common `make` targets for every repository.
+
+- **Lint**
+
+  ```bash
+  flamapy-dev make lint
+  ```
+
+  Runs `make lint` in each repository.
+
+- **Test**
+
+  ```bash
+  flamapy-dev make test
+  ```
+
+  Runs `make test` in each repository.
+
+- **Mypy**
+
+  ```bash
+  flamapy-dev make mypy
+  ```
+
+  Runs static type checking using `make mypy`.
 
 ## Configuration
 
