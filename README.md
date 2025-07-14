@@ -48,7 +48,8 @@ cd <repository_directory>
 
 ### Git Commands
 
-The following commands are available for managing Git repositories:
+The following commands are available for managing Git repositories.
+Use `--parent-dir PATH` to specify where the repositories are located (defaults to `..`):
 
 - **Clone Repositories**
 
@@ -72,7 +73,7 @@ The following commands are available for managing Git repositories:
   Switches all repositories to the `main` branch if it exists; otherwise, switches to `master`.
 
   ```bash
-  python flamapy_dev.py git switch_main
+  python flamapy_dev.py git switch-main
   ```
 
 

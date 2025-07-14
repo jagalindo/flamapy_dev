@@ -46,9 +46,9 @@ def switch_develop(ctx):
         else:
             click.echo(f"{repo_name} does not exist.")
 
-@click.command(name="switch_main_or_master")
+@click.command(name="switch-main")
 @click.pass_context
-def switch_main_or_master(ctx):
+def switch_main(ctx):
     """Switch all repositories to the main branch if it exists, otherwise to master."""
     repos = ctx.obj['REPOS']
     parent_dir = ctx.obj['PARENT_DIR']
@@ -111,7 +111,7 @@ def delete(ctx):
 
 git.add_command(clone)
 git.add_command(switch_develop)
-git.add_command(switch_main_or_master)
+git.add_command(switch_main)
 git.add_command(pull)
 git.add_command(delete)
 git.add_command(status)
