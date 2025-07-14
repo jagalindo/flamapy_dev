@@ -9,7 +9,7 @@ def parse_requirements(filename):
 
 setup(
     name="flamapy-dev",
-    version="0.1",
+    version="0.0.1",
     description="CLI tool for managing Git repositories and Python " \
     "packages for the Flamapy distribution",
     author="José A. Galindo",
