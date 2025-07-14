@@ -109,9 +109,28 @@ def delete(ctx):
         else:
             click.echo(f"{repo_name} directory does not exist.")
 
+
+@git.command()
+@click.argument('tag')
+@click.pass_context
+def tag_repo(ctx, tag):
+    """Create and push a Git tag to all repositories."""
+    repos = ctx.obj['REPOS']
+    parent_dir = ctx.obj['PARENT_DIR']
+    for repo_name in repos.keys():
+        repo_dir = os.path.join(parent_dir, repo_name)
+        if os.path.isdir(os.path.join(repo_dir, '.git')):
+            click.echo(f"Tagging {repo_name} with {tag}...")
+            subprocess.run(['git', 'tag', tag], cwd=repo_dir, check=True)
+            click.echo(f"Pushing tag {tag} for {repo_name}...")
+            subprocess.run(['git', 'push', 'origin', tag], cwd=repo_dir, check=True)
+        else:
+            click.echo(f"{repo_name} does not exist.")
+
 git.add_command(clone)
 git.add_command(switch_develop)
 git.add_command(switch_main)
 git.add_command(pull)
 git.add_command(delete)
 git.add_command(status)
+git.add_command(tag_repo)

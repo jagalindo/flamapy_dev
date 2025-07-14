@@ -117,3 +117,32 @@ def test_switch_develop_branch_missing_everywhere():
     assert result.exit_code == 0
     switch_calls = [call.args[0] for call in run_mock.call_args_list if call.args and call.args[0][0:2] == ['git', 'switch']]
     assert switch_calls == []
+
+
+def test_tag_repo_creates_and_pushes_tag():
+    runner = CliRunner()
+    repos = {'repo1': 'url1'}
+    obj = {'REPOS': repos, 'PARENT_DIR': '/tmp'}
+    with patch('commands.repositories.os.path.isdir', return_value=True), \
+         patch('commands.repositories.subprocess.run') as run_mock:
+        result = runner.invoke(repositories.tag_repo, ['v1.0'], obj=obj)
+
+    assert result.exit_code == 0
+    expected = [
+        ['git', 'tag', 'v1.0'],
+        ['git', 'push', 'origin', 'v1.0']
+    ]
+    calls = [c.args[0] for c in run_mock.call_args_list]
+    assert calls == expected
+
+
+def test_tag_repo_missing_repo():
+    runner = CliRunner()
+    repos = {'repo1': 'url1'}
+    obj = {'REPOS': repos, 'PARENT_DIR': '/tmp'}
+    with patch('commands.repositories.os.path.isdir', return_value=False), \
+         patch('commands.repositories.subprocess.run') as run_mock:
+        result = runner.invoke(repositories.tag_repo, ['v1.0'], obj=obj)
+
+    assert result.exit_code == 0
+    run_mock.assert_not_called()
