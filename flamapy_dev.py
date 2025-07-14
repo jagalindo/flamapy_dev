@@ -1,5 +1,5 @@
 import click
-from commands import git, pip
+from commands import git, pip, version
 import os
 
 # Define the repositories and their URLs
@@ -52,6 +52,7 @@ def cli(ctx, parent_dir):
 # Add command groups
 cli.add_command(git)
 cli.add_command(pip)
+cli.add_command(version)
 
 if __name__ == "__main__":
     cli()
