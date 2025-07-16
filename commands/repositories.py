@@ -4,8 +4,10 @@ import os
 import shutil
 import time
 import json
+from pathlib import Path
 from urllib import request, error
 from packaging.requirements import Requirement
+from commands.versions import extract_current_version
 
 
 def _parse_requirements(req_file: str):
@@ -224,6 +226,33 @@ def tag_repo(ctx, tag):
             click.echo(f"{repo_name} does not exist.")
 
 
+@git.command(name="tag-from-setup")
+@click.pass_context
+def tag_from_setup(ctx):
+    """Create and push a Git tag for each repository based on its setup.py version."""
+    repos = ctx.obj["REPOS"]
+    parent_dir = ctx.obj["PARENT_DIR"]
+    for repo_name in repos:
+        repo_dir = os.path.join(parent_dir, repo_name)
+        if os.path.isdir(os.path.join(repo_dir, ".git")):
+            setup_path = os.path.join(repo_dir, "setup.py")
+            if not os.path.exists(setup_path):
+                click.echo(f"setup.py not found in {repo_name}, skipping.")
+                continue
+            version = extract_current_version(Path(setup_path))
+            tag = f"v{version}"
+            req_file = os.path.join(repo_dir, "requirements.txt")
+            if os.path.exists(req_file):
+                click.echo(f"Waiting for PyPI packages of {repo_name}...")
+                wait_for_requirements(req_file)
+            click.echo(f"Tagging {repo_name} with {tag}...")
+            subprocess.run(["git", "tag", tag], cwd=repo_dir, check=True)
+            click.echo(f"Pushing tag {tag} for {repo_name}...")
+            subprocess.run(["git", "push", "origin", tag], cwd=repo_dir, check=True)
+        else:
+            click.echo(f"{repo_name} does not exist.")
+
+
 git.add_command(clone)
 git.add_command(switch_develop)
 git.add_command(switch_main)
@@ -231,3 +260,4 @@ git.add_command(pull)
 git.add_command(delete)
 git.add_command(status)
 git.add_command(tag_repo)
+git.add_command(tag_from_setup)
