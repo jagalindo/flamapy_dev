@@ -118,6 +118,15 @@ Use `--parent-dir PATH` to specify where the repositories are located (defaults 
   flamapy-dev git tag v1.0.0
   ```
 
+- **Autotag Repositories**
+
+  Creates and pushes a Git tag based on each repository's `setup.py` version. The tag
+  will be prefixed with `v`.
+
+  ```bash
+  flamapy-dev git tag-from-setup
+  ```
+
 ### Pip Commands
 
 The following commands are available for managing Python dependencies:
