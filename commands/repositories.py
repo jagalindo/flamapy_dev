@@ -21,6 +21,8 @@ from urllib import request, error
 from packaging.requirements import Requirement
 from commands.versions import extract_current_version
 
+HTTP_OK = 200
+
 
 def _parse_requirements(req_file: str) -> list[Requirement]:
     """
@@ -41,12 +43,12 @@ def _parse_requirements(req_file: str) -> list[Requirement]:
     if not os.path.exists(req_file):
         return requirements
     with open(req_file, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
+        for raw_line in f:
+            stripped = raw_line.strip()
+            if not stripped or stripped.startswith("#"):
                 continue
             try:
-                requirements.append(Requirement(line))
+                requirements.append(Requirement(stripped))
             except Exception:
                 continue
     return requirements
@@ -71,7 +73,7 @@ def _package_available(req: Requirement) -> bool:
     url = f"https://pypi.org/pypi/{req.name}/json"
     try:
         with request.urlopen(url, timeout=10) as resp:
-            if resp.status != 200:
+            if resp.status != HTTP_OK:
                 return False
             data = json.load(resp)
     except error.URLError:
@@ -455,7 +457,7 @@ def branch(ctx: click.Context) -> None:
     unique_branches = set(branches.values())
     click.echo("=" * 50)
     if len(unique_branches) == 1:
-        click.echo(f"✓ All repos on branch: {list(unique_branches)[0]}")
+        click.echo(f"✓ All repos on branch: {next(iter(unique_branches))}")
     else:
         click.echo("⚠ Repos are on different branches!")
 

@@ -89,12 +89,12 @@ def parse_requirements(req_path: Path) -> dict[str, str]:
     if not req_path.exists():
         return deps
     text = req_path.read_text(encoding="utf-8")
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
+    for raw_line in text.splitlines():
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
             continue
         # Match patterns like: flamapy-fw~=2.1.0.dev1 or flamapy-fw>=2.0.0
-        m = re.match(r"([a-zA-Z0-9_-]+)([~>=<]+)(.+)", line)
+        m = re.match(r"([a-zA-Z0-9_-]+)([~>=<]+)(.+)", stripped)
         if m:
             deps[m.group(1)] = m.group(3)
     return deps
@@ -266,6 +266,43 @@ def show(ctx: click.Context) -> None:
     click.echo("\n" + "=" * 60)
 
 
+def _collect_versions(parent_dir: str, repos: dict) -> dict[str, tuple[str, str]]:
+    """Collect package versions from all repos."""
+    pkg_versions = {}
+    for folder in repos:
+        repo = Path(parent_dir) / folder
+        setup_py = repo / "setup.py"
+        if not setup_py.exists():
+            continue
+        try:
+            pkg_name = extract_package_name(setup_py)
+            pkg_version = extract_current_version(setup_py)
+            pkg_versions[pkg_name] = (folder, pkg_version)
+        except Exception:
+            continue
+    return pkg_versions
+
+
+def _find_version_errors(parent_dir: str, repos: dict, pkg_versions: dict) -> list[str]:
+    """Find version mismatches in requirements files."""
+    errors = []
+    for folder in repos:
+        repo = Path(parent_dir) / folder
+        req_file = repo / "requirements.txt"
+        if not req_file.exists():
+            continue
+        deps = parse_requirements(req_file)
+        for dep, required_ver in deps.items():
+            if dep in pkg_versions:
+                _, actual_ver = pkg_versions[dep]
+                if required_ver != actual_ver:
+                    errors.append(
+                        f"{folder}/requirements.txt: {dep}~={required_ver} "
+                        f"but {dep} is at v{actual_ver}"
+                    )
+    return errors
+
+
 @version.command()
 @click.pass_context
 def check(ctx: click.Context) -> None:
@@ -280,50 +317,12 @@ def check(ctx: click.Context) -> None:
     Example:
         $ flamapy-dev version check
         ✓ All internal dependencies are in sync!
-
-        $ flamapy-dev version check
-        ❌ VERSION MISMATCHES FOUND:
-
-          • fm_metamodel/requirements.txt: flamapy-fw~=2.0.0 but flamapy-fw is at v2.1.0
-
-        Total: 1 error(s)
     """
     parent_dir = ctx.obj["PARENT_DIR"]
     repos = ctx.obj["REPOS"]
 
-    # Collect all package versions
-    pkg_versions = {}
-    for folder in repos:
-        repo = Path(parent_dir) / folder
-        setup_py = repo / "setup.py"
-        if not setup_py.exists():
-            continue
-        try:
-            pkg_name = extract_package_name(setup_py)
-            pkg_version = extract_current_version(setup_py)
-            pkg_versions[pkg_name] = (folder, pkg_version)
-        except Exception:
-            continue
-
-    # Check dependencies
-    errors = []
-
-    for folder in repos:
-        repo = Path(parent_dir) / folder
-        req_file = repo / "requirements.txt"
-
-        if not req_file.exists():
-            continue
-
-        deps = parse_requirements(req_file)
-        for dep, required_ver in deps.items():
-            if dep in pkg_versions:
-                _, actual_ver = pkg_versions[dep]
-                if required_ver != actual_ver:
-                    errors.append(
-                        f"{folder}/requirements.txt: {dep}~={required_ver} "
-                        f"but {dep} is at v{actual_ver}"
-                    )
+    pkg_versions = _collect_versions(parent_dir, repos)
+    errors = _find_version_errors(parent_dir, repos, pkg_versions)
 
     if errors:
         click.echo("\n❌ VERSION MISMATCHES FOUND:\n")
@@ -336,45 +335,10 @@ def check(ctx: click.Context) -> None:
         click.echo("\n✓ All internal dependencies are in sync!")
 
 
-@version.command()
-@click.argument("new_version")
-@click.option("--dry-run", "-n", is_flag=True, help="Show what would be changed without modifying files")
-@click.pass_context
-def bump(ctx: click.Context, new_version: str, dry_run: bool) -> None:
-    """
-    Bump all repos to the given version and update internal dependencies.
-
-    Updates the version in each setup.py and updates all internal
-    dependency references in requirements.txt files.
-
-    \b
-    Args:
-        new_version: The new version to set (e.g., "2.2.0")
-
-    \b
-    Options:
-        --dry-run, -n: Preview changes without modifying files
-
-    \b
-    Example:
-        $ flamapy-dev version bump 2.2.0 --dry-run
-        [DRY RUN] Would bump 6 packages to v2.2.0:
-
-        flamapy_fw/
-          setup.py: 2.1.0.dev1 → 2.2.0
-
-        $ flamapy-dev version bump 2.2.0
-        Bumping 6 packages to v2.2.0...
-
-        flamapy_fw/
-          ✓ setup.py: 2.1.0.dev1 → 2.2.0
-    """
-    parent_dir = ctx.obj["PARENT_DIR"]
-    repos = ctx.obj["REPOS"]
+def _gather_repo_info(parent_dir: str, repos: dict, new_version: str) -> tuple[dict, dict]:
+    """Gather version info from all repos. Returns (pkg_map, repo_info)."""
     pkg_map = {}
     repo_info = {}
-
-    # Gather info for each repo folder
     for folder in repos:
         repo = Path(parent_dir) / folder
         setup_py = repo / "setup.py"
@@ -388,18 +352,15 @@ def bump(ctx: click.Context, new_version: str, dry_run: bool) -> None:
             repo_info[folder] = (repo, pkg_name, oldv, new_version)
         except Exception as e:
             click.echo(f"Error in {folder}: {e}")
+    return pkg_map, repo_info
 
-    if dry_run:
-        click.echo(f"\n[DRY RUN] Would bump {len(repo_info)} packages to v{new_version}:\n")
-    else:
-        click.echo(f"\nBumping {len(repo_info)} packages to v{new_version}...\n")
 
-    # Apply bumps (or show what would be done)
-    for folder, (repo, pkg_name, oldv, newv) in repo_info.items():
+def _apply_bump(repo_info: dict, pkg_map: dict, dry_run: bool) -> None:
+    """Apply version bumps to all repos."""
+    for folder, (repo, _, oldv, newv) in repo_info.items():
         click.echo(f"{folder}/")
         click.echo(f"  setup.py: {oldv} → {newv}")
 
-        # Check requirements.txt for internal deps
         req = repo / "requirements.txt"
         if req.exists():
             deps = parse_requirements(req)
@@ -408,25 +369,128 @@ def bump(ctx: click.Context, new_version: str, dry_run: bool) -> None:
                 click.echo(f"  requirements.txt: {', '.join(internal_deps)} → {newv}")
 
         if not dry_run:
-            # Actually update files
             update_setup_py(repo / "setup.py", oldv, newv)
             if req.exists():
                 update_requirements(req, pkg_map)
 
+
+@version.command()
+@click.argument("new_version")
+@click.option("--dry-run", "-n", is_flag=True, help="Show changes without modifying")
+@click.pass_context
+def bump(ctx: click.Context, new_version: str, dry_run: bool) -> None:
+    """
+    Bump all repos to the given version and update internal dependencies.
+
+    \b
+    Args:
+        new_version: The new version to set (e.g., "2.2.0")
+
+    \b
+    Example:
+        $ flamapy-dev version bump 2.2.0 --dry-run
+        $ flamapy-dev version bump 2.2.0
+    """
+    parent_dir = ctx.obj["PARENT_DIR"]
+    repos = ctx.obj["REPOS"]
+
+    pkg_map, repo_info = _gather_repo_info(parent_dir, repos, new_version)
+
+    if dry_run:
+        click.echo(f"\n[DRY RUN] Would bump {len(repo_info)} packages to v{new_version}:\n")
+    else:
+        click.echo(f"\nBumping {len(repo_info)} packages to v{new_version}...\n")
+
+    _apply_bump(repo_info, pkg_map, dry_run)
+
     if dry_run:
         click.echo("\n[DRY RUN] No files were modified.")
-        click.echo("Run without --dry-run to apply changes.")
     else:
         click.echo("\n✓ Bump completed.")
-        click.echo("\nNext steps:")
-        click.echo("  1. Review changes: flamapy-dev git status")
-        click.echo("  2. Commit changes in each repo")
-        click.echo("  3. Push and create releases")
+
+
+def _run_tests(parent_dir: str, repos: dict) -> bool:
+    """Run tests in all repos. Returns True if all pass."""
+    import subprocess
+    click.echo("\n📋 Step 1: Running tests...")
+    for repo_name in repos:
+        repo_dir = os.path.join(parent_dir, repo_name)
+        if os.path.isdir(repo_dir):
+            result = subprocess.run(
+                ["make", "test"], cwd=repo_dir, capture_output=True, check=False
+            )
+            if result.returncode != 0:
+                click.echo(f"  ✗ Tests failed in {repo_name}")
+                return False
+            click.echo(f"  ✓ {repo_name}")
+    click.echo("  All tests passed!")
+    return True
+
+
+def _commit_all(parent_dir: str, repos: dict, message: str) -> None:
+    """Commit changes in all repos."""
+    import subprocess
+    click.echo("\n📋 Step 3: Committing changes...")
+    for repo_name in repos:
+        repo_dir = os.path.join(parent_dir, repo_name)
+        if not os.path.isdir(os.path.join(repo_dir, ".git")):
+            continue
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=repo_dir, capture_output=True, text=True, check=False
+        )
+        if not result.stdout.strip():
+            continue
+        subprocess.run(["git", "add", "-A"], cwd=repo_dir, check=True)
+        subprocess.run(["git", "commit", "-m", message], cwd=repo_dir, check=True)
+        click.echo(f"  ✓ {repo_name}")
+
+
+def _push_all(parent_dir: str, repos: dict) -> None:
+    """Push all repos to remote."""
+    import subprocess
+    click.echo("\n📋 Step 4: Pushing commits...")
+    for repo_name in repos:
+        repo_dir = os.path.join(parent_dir, repo_name)
+        if os.path.isdir(os.path.join(repo_dir, ".git")):
+            result = subprocess.run(
+                ["git", "push"],
+                cwd=repo_dir, capture_output=True, text=True, check=False
+            )
+            if result.returncode == 0:
+                click.echo(f"  ✓ {repo_name}")
+            else:
+                click.echo(f"  ✗ {repo_name}: {result.stderr.strip()}")
+
+
+def _tag_all(parent_dir: str, repos: dict, new_version: str) -> None:
+    """Create and push tags for all repos."""
+    import subprocess
+    from commands.repositories import wait_for_requirements
+
+    click.echo("\n📋 Step 5: Creating and pushing tags...")
+    click.echo("  (Waiting for PyPI availability between repos...)")
+
+    for repo_name in repos:
+        repo_dir = os.path.join(parent_dir, repo_name)
+        if not os.path.isdir(os.path.join(repo_dir, ".git")):
+            continue
+
+        tag = f"v{new_version}"
+        req_file = os.path.join(repo_dir, "requirements.txt")
+
+        if os.path.exists(req_file):
+            click.echo(f"  ⏳ {repo_name}: waiting for dependencies...")
+            wait_for_requirements(req_file)
+
+        subprocess.run(["git", "tag", tag], cwd=repo_dir, check=True)
+        subprocess.run(["git", "push", "origin", tag], cwd=repo_dir, check=True)
+        click.echo(f"  ✓ {repo_name}: tagged {tag}")
 
 
 @version.command()
 @click.argument("new_version")
-@click.option("--dry-run", "-n", is_flag=True, help="Show what would be done without executing")
+@click.option("--dry-run", "-n", is_flag=True, help="Simulate without making changes")
 @click.option("--skip-tests", is_flag=True, help="Skip running tests before release")
 @click.pass_context
 def release(ctx: click.Context, new_version: str, dry_run: bool, skip_tests: bool) -> None:
@@ -445,34 +509,10 @@ def release(ctx: click.Context, new_version: str, dry_run: bool, skip_tests: boo
         new_version: The version to release (e.g., "2.2.0")
 
     \b
-    Options:
-        --dry-run, -n: Simulate the release without making changes
-        --skip-tests: Skip the test execution step
-
-    \b
     Example:
         $ flamapy-dev version release 2.2.0 --dry-run
-        ============================================================
-        RELEASE v2.2.0
-        ============================================================
-        [DRY RUN MODE - no changes will be made]
-
-        📋 Step 1: Skipping tests
-        📋 Step 2: Bumping versions...
-        ...
-
         $ flamapy-dev version release 2.2.0
-        ============================================================
-        RELEASE v2.2.0
-        ============================================================
-
-        📋 Step 1: Running tests...
-          ✓ flamapy_fw
-          ✓ fm_metamodel
-        ...
     """
-    import subprocess
-
     parent_dir = ctx.obj["PARENT_DIR"]
     repos = ctx.obj["REPOS"]
 
@@ -483,24 +523,11 @@ def release(ctx: click.Context, new_version: str, dry_run: bool, skip_tests: boo
     if dry_run:
         click.echo("[DRY RUN MODE - no changes will be made]\n")
 
-    # Step 1: Run tests (optional)
+    # Step 1: Run tests
     if not skip_tests and not dry_run:
-        click.echo("\n📋 Step 1: Running tests...")
-        for repo_name in repos:
-            repo_dir = os.path.join(parent_dir, repo_name)
-            if os.path.isdir(repo_dir):
-                result = subprocess.run(
-                    ["make", "test"],
-                    cwd=repo_dir,
-                    capture_output=True,
-                    check=False
-                )
-                if result.returncode != 0:
-                    click.echo(f"  ✗ Tests failed in {repo_name}")
-                    click.echo("Release aborted. Fix tests and try again.")
-                    ctx.exit(1)
-                click.echo(f"  ✓ {repo_name}")
-        click.echo("  All tests passed!")
+        if not _run_tests(parent_dir, repos):
+            click.echo("Release aborted. Fix tests and try again.")
+            ctx.exit(1)
     else:
         click.echo("\n📋 Step 1: Skipping tests")
 
@@ -509,75 +536,14 @@ def release(ctx: click.Context, new_version: str, dry_run: bool, skip_tests: boo
     ctx.invoke(bump, new_version=new_version, dry_run=dry_run)
 
     if dry_run:
-        click.echo("\n📋 Step 3: Would commit changes")
-        click.echo("📋 Step 4: Would push commits")
-        click.echo("📋 Step 5: Would create and push tags")
+        click.echo("\n📋 Step 3-5: Would commit, push, and tag")
         click.echo(f"\n[DRY RUN] Release v{new_version} simulation complete.")
         return
 
-    # Step 3: Commit changes
-    click.echo("\n📋 Step 3: Committing changes...")
-    commit_msg = f"chore: bump version to {new_version}"
-    for repo_name in repos:
-        repo_dir = os.path.join(parent_dir, repo_name)
-        if not os.path.isdir(os.path.join(repo_dir, ".git")):
-            continue
-
-        # Check if there are changes
-        result = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=repo_dir,
-            capture_output=True,
-            text=True,
-            check=False
-        )
-        if not result.stdout.strip():
-            continue
-
-        subprocess.run(["git", "add", "-A"], cwd=repo_dir, check=True)
-        subprocess.run(["git", "commit", "-m", commit_msg], cwd=repo_dir, check=True)
-        click.echo(f"  ✓ {repo_name}")
-
-    # Step 4: Push commits
-    click.echo("\n📋 Step 4: Pushing commits...")
-    for repo_name in repos:
-        repo_dir = os.path.join(parent_dir, repo_name)
-        if os.path.isdir(os.path.join(repo_dir, ".git")):
-            result = subprocess.run(
-                ["git", "push"],
-                cwd=repo_dir,
-                capture_output=True,
-                text=True,
-                check=False
-            )
-            if result.returncode == 0:
-                click.echo(f"  ✓ {repo_name}")
-            else:
-                click.echo(f"  ✗ {repo_name}: {result.stderr.strip()}")
-
-    # Step 5: Create and push tags (uses existing tag-from-setup logic)
-    click.echo("\n📋 Step 5: Creating and pushing tags...")
-    click.echo("  (Waiting for PyPI availability between repos...)")
-
-    from commands.repositories import wait_for_requirements
-
-    for repo_name in repos:
-        repo_dir = os.path.join(parent_dir, repo_name)
-        if not os.path.isdir(os.path.join(repo_dir, ".git")):
-            continue
-
-        tag = f"v{new_version}"
-        req_file = os.path.join(repo_dir, "requirements.txt")
-
-        # Wait for dependencies to be available on PyPI
-        if os.path.exists(req_file):
-            click.echo(f"  ⏳ {repo_name}: waiting for dependencies...")
-            wait_for_requirements(req_file)
-
-        # Create and push tag
-        subprocess.run(["git", "tag", tag], cwd=repo_dir, check=True)
-        subprocess.run(["git", "push", "origin", tag], cwd=repo_dir, check=True)
-        click.echo(f"  ✓ {repo_name}: tagged {tag}")
+    # Steps 3-5: Commit, push, and tag
+    _commit_all(parent_dir, repos, f"chore: bump version to {new_version}")
+    _push_all(parent_dir, repos)
+    _tag_all(parent_dir, repos, new_version)
 
     click.echo(f"\n{'='*60}")
     click.echo(f"✓ Release v{new_version} completed!")
