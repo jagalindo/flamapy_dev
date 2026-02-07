@@ -1,9 +1,27 @@
+"""
+Flamapy Development CLI Tool.
+
+This is the main entry point for the flamapy-dev CLI, which provides
+commands for managing multiple flamapy repositories simultaneously.
+
+Example usage:
+    $ flamapy-dev git clone           # Clone all repositories
+    $ flamapy-dev version show        # Show package versions
+    $ flamapy-dev make all            # Run all checks
+    $ flamapy-dev docs help-all       # Show quick reference
+
+For more information, see:
+    $ flamapy-dev --help
+    $ flamapy-dev docs show
+"""
+
 import click
-from commands import git, pip, version, make
+from commands import git, pip, version, make, docs
 import os
 from collections import OrderedDict
 
-# Define the repositories and their URLs
+# Define the repositories and their URLs.
+# Order matters: dependencies must come before dependents.
 REPOS = OrderedDict(
     [
         ("flamapy_fw", "https://github.com/flamapy/flamapy_fw.git"),
@@ -32,24 +50,45 @@ DEFAULT_PARENT_DIR = os.curdir
     show_default=True,
     help="Parent directory where operations should be performed.",
 )
-def cli(ctx, parent_dir):
-    """Manage flamapy repositories and dependencies with various commands.
+def cli(ctx: click.Context, parent_dir: str) -> None:
+    """
+    Manage flamapy repositories and dependencies with various commands.
 
+    This CLI tool helps manage multiple flamapy repositories simultaneously,
+    including git operations, package management, version control, and
+    quality checks.
+
+    \b
+    Command Groups:
+        git      - Repository management (clone, pull, branch, etc.)
+        pip      - Package management (install, update, remove)
+        make     - Run make targets (lint, test, mypy)
+        version  - Version management (show, check, bump, release)
+        docs     - Documentation (show, generate)
+
+    \b
     Examples:
         $ flamapy-dev git clone
-        $ flamapy-dev --parent-dir /path/to/parent_dir git clone
+        $ flamapy-dev --parent-dir /path/to/repos git pull
+        $ flamapy-dev version show
+        $ flamapy-dev make all -c
+
+    \b
+    For detailed help on any command:
+        $ flamapy-dev <command> --help
+        $ flamapy-dev <command> <subcommand> --help
     """
     ctx.ensure_object(dict)
     ctx.obj["REPOS"] = REPOS
     ctx.obj["PARENT_DIR"] = parent_dir
-    pass
 
 
 # Add command groups
+cli.add_command(docs)
 cli.add_command(git)
+cli.add_command(make)
 cli.add_command(pip)
 cli.add_command(version)
-cli.add_command(make)
 
 if __name__ == "__main__":
     cli()

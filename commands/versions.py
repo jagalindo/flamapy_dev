@@ -1,31 +1,90 @@
+"""
+Version management commands for flamapy-dev.
+
+This module provides commands for managing package versions across
+multiple repositories, including viewing, checking, and bumping versions.
+
+Example usage:
+    $ flamapy-dev version show
+    $ flamapy-dev version check
+    $ flamapy-dev version bump 2.2.0
+    $ flamapy-dev version release 2.2.0
+"""
+
 import click
 import os
 import re
 from pathlib import Path
 
-# Helper functions for version management
-
 
 def extract_current_version(setup_path: Path) -> str:
-    """Extract version string from setup.py."""
+    """
+    Extract the version string from a setup.py file.
+
+    Args:
+        setup_path: Path to the setup.py file.
+
+    Returns:
+        The version string (e.g., "2.1.0.dev1").
+
+    Raises:
+        ValueError: If no version is found in the file.
+
+    Example:
+        >>> from pathlib import Path
+        >>> version = extract_current_version(Path("flamapy_fw/setup.py"))
+        >>> print(version)
+        '2.1.0.dev1'
+    """
     text = setup_path.read_text(encoding="utf-8")
     m = re.search(r"version\s*=\s*['\"]([^'\"]+)['\"]", text)
     if not m:
-        raise ValueError(f"No se encontró version en {setup_path}")
+        raise ValueError(f"No version found in {setup_path}")
     return m.group(1)
 
 
 def extract_package_name(setup_path: Path) -> str:
-    """Extract package name from setup.py."""
+    """
+    Extract the package name from a setup.py file.
+
+    Args:
+        setup_path: Path to the setup.py file.
+
+    Returns:
+        The package name (e.g., "flamapy-fw").
+
+    Raises:
+        ValueError: If no name is found in the file.
+
+    Example:
+        >>> from pathlib import Path
+        >>> name = extract_package_name(Path("flamapy_fw/setup.py"))
+        >>> print(name)
+        'flamapy-fw'
+    """
     text = setup_path.read_text(encoding="utf-8")
     m = re.search(r"name\s*=\s*['\"]([^'\"]+)['\"]", text)
     if not m:
-        raise ValueError(f"No se encontró name en {setup_path}")
+        raise ValueError(f"No name found in {setup_path}")
     return m.group(1)
 
 
 def parse_requirements(req_path: Path) -> dict[str, str]:
-    """Parse requirements.txt and return dict of {package_name: version_spec}."""
+    """
+    Parse a requirements.txt file and extract package versions.
+
+    Args:
+        req_path: Path to the requirements.txt file.
+
+    Returns:
+        Dictionary mapping package names to version specifiers.
+
+    Example:
+        >>> from pathlib import Path
+        >>> deps = parse_requirements(Path("fm_metamodel/requirements.txt"))
+        >>> print(deps)
+        {'flamapy-fw': '2.1.0.dev1', 'uvlparser': '2.0.1'}
+    """
     deps = {}
     if not req_path.exists():
         return deps
@@ -42,7 +101,27 @@ def parse_requirements(req_path: Path) -> dict[str, str]:
 
 
 def update_setup_py(setup_path: Path, old_version: str, new_version: str) -> bool:
-    """Update version in setup.py. Returns True if updated."""
+    """
+    Update the version string in a setup.py file.
+
+    Args:
+        setup_path: Path to the setup.py file.
+        old_version: The current version to replace.
+        new_version: The new version to set.
+
+    Returns:
+        True if the version was updated, False otherwise.
+
+    Example:
+        >>> from pathlib import Path
+        >>> updated = update_setup_py(
+        ...     Path("flamapy_fw/setup.py"),
+        ...     "2.1.0.dev1",
+        ...     "2.2.0"
+        ... )
+        >>> print(updated)
+        True
+    """
     text = setup_path.read_text(encoding="utf-8")
     pattern = r"(version\s*=\s*['\"])" + re.escape(old_version) + r"(['\"])"
     repl = r"\g<1>" + new_version + r"\g<2>"
@@ -54,7 +133,26 @@ def update_setup_py(setup_path: Path, old_version: str, new_version: str) -> boo
 
 
 def update_requirements(req_path: Path, pkg_map: dict[str, tuple[str, str]]) -> list[str]:
-    """Update requirements.txt with new versions. Returns list of updated packages."""
+    """
+    Update internal dependency versions in a requirements.txt file.
+
+    Args:
+        req_path: Path to the requirements.txt file.
+        pkg_map: Dictionary mapping package names to (old_version, new_version) tuples.
+
+    Returns:
+        List of package names that were updated.
+
+    Example:
+        >>> from pathlib import Path
+        >>> pkg_map = {"flamapy-fw": ("2.1.0", "2.2.0")}
+        >>> updated = update_requirements(
+        ...     Path("fm_metamodel/requirements.txt"),
+        ...     pkg_map
+        ... )
+        >>> print(updated)
+        ['flamapy-fw']
+    """
     if not req_path.exists():
         return []
     text = req_path.read_text(encoding="utf-8")
@@ -73,8 +171,19 @@ def update_requirements(req_path: Path, pkg_map: dict[str, tuple[str, str]]) -> 
 
 @click.group()
 @click.pass_context
-def version(ctx):
-    """Commands for managing package versions."""
+def version(ctx: click.Context) -> None:
+    """
+    Commands for managing package versions.
+
+    This command group provides tools for viewing, validating, and
+    updating package versions across all repositories.
+
+    \b
+    Examples:
+        $ flamapy-dev version show      # Show all versions
+        $ flamapy-dev version check     # Validate version consistency
+        $ flamapy-dev version bump 2.2.0  # Bump all versions
+    """
     ctx.ensure_object(dict)
     ctx.obj["PARENT_DIR"] = ctx.obj.get("PARENT_DIR", os.curdir)
     ctx.obj["REPOS"] = ctx.obj.get("REPOS", {})
@@ -82,8 +191,29 @@ def version(ctx):
 
 @version.command()
 @click.pass_context
-def show(ctx):
-    """Show current versions of all packages and their dependencies."""
+def show(ctx: click.Context) -> None:
+    """
+    Show current versions of all packages and their dependencies.
+
+    Displays each package's version and lists internal dependencies
+    with their required versions, marking mismatches with ✗.
+
+    \b
+    Example:
+        $ flamapy-dev version show
+
+        ============================================================
+        PACKAGE VERSIONS
+        ============================================================
+
+        flamapy_fw/
+          Package: flamapy-fw v2.1.0.dev1
+
+        fm_metamodel/
+          Package: flamapy-fm v2.1.0.dev1
+          Internal dependencies:
+            - flamapy-fw~=2.1.0.dev1 ✓
+    """
     parent_dir = ctx.obj["PARENT_DIR"]
     repos = ctx.obj["REPOS"]
 
@@ -138,8 +268,26 @@ def show(ctx):
 
 @version.command()
 @click.pass_context
-def check(ctx):
-    """Check if all internal dependencies have matching versions."""
+def check(ctx: click.Context) -> None:
+    """
+    Check if all internal dependencies have matching versions.
+
+    Validates that the versions specified in requirements.txt files
+    match the actual versions in the corresponding setup.py files.
+    Exits with code 1 if mismatches are found.
+
+    \b
+    Example:
+        $ flamapy-dev version check
+        ✓ All internal dependencies are in sync!
+
+        $ flamapy-dev version check
+        ❌ VERSION MISMATCHES FOUND:
+
+          • fm_metamodel/requirements.txt: flamapy-fw~=2.0.0 but flamapy-fw is at v2.1.0
+
+        Total: 1 error(s)
+    """
     parent_dir = ctx.obj["PARENT_DIR"]
     repos = ctx.obj["REPOS"]
 
@@ -159,7 +307,6 @@ def check(ctx):
 
     # Check dependencies
     errors = []
-    warnings = []
 
     for folder in repos:
         repo = Path(parent_dir) / folder
@@ -193,8 +340,35 @@ def check(ctx):
 @click.argument("new_version")
 @click.option("--dry-run", "-n", is_flag=True, help="Show what would be changed without modifying files")
 @click.pass_context
-def bump(ctx, new_version, dry_run):
-    """Bump all repos to the given version and update internal dependencies."""
+def bump(ctx: click.Context, new_version: str, dry_run: bool) -> None:
+    """
+    Bump all repos to the given version and update internal dependencies.
+
+    Updates the version in each setup.py and updates all internal
+    dependency references in requirements.txt files.
+
+    \b
+    Args:
+        new_version: The new version to set (e.g., "2.2.0")
+
+    \b
+    Options:
+        --dry-run, -n: Preview changes without modifying files
+
+    \b
+    Example:
+        $ flamapy-dev version bump 2.2.0 --dry-run
+        [DRY RUN] Would bump 6 packages to v2.2.0:
+
+        flamapy_fw/
+          setup.py: 2.1.0.dev1 → 2.2.0
+
+        $ flamapy-dev version bump 2.2.0
+        Bumping 6 packages to v2.2.0...
+
+        flamapy_fw/
+          ✓ setup.py: 2.1.0.dev1 → 2.2.0
+    """
     parent_dir = ctx.obj["PARENT_DIR"]
     repos = ctx.obj["REPOS"]
     pkg_map = {}
@@ -255,14 +429,47 @@ def bump(ctx, new_version, dry_run):
 @click.option("--dry-run", "-n", is_flag=True, help="Show what would be done without executing")
 @click.option("--skip-tests", is_flag=True, help="Skip running tests before release")
 @click.pass_context
-def release(ctx, new_version, dry_run, skip_tests):
-    """Full release workflow: bump versions, commit, tag, and push.
+def release(ctx: click.Context, new_version: str, dry_run: bool, skip_tests: bool) -> None:
+    """
+    Full release workflow: bump versions, commit, tag, and push.
 
     This command automates the entire release process:
-    1. Bump all package versions
-    2. Commit changes in all repos
-    3. Push commits
-    4. Create and push tags (waits for PyPI availability)
+    1. Run tests in all repos (optional)
+    2. Bump all package versions
+    3. Commit changes in all repos
+    4. Push commits to remote
+    5. Create and push tags (waits for PyPI availability)
+
+    \b
+    Args:
+        new_version: The version to release (e.g., "2.2.0")
+
+    \b
+    Options:
+        --dry-run, -n: Simulate the release without making changes
+        --skip-tests: Skip the test execution step
+
+    \b
+    Example:
+        $ flamapy-dev version release 2.2.0 --dry-run
+        ============================================================
+        RELEASE v2.2.0
+        ============================================================
+        [DRY RUN MODE - no changes will be made]
+
+        📋 Step 1: Skipping tests
+        📋 Step 2: Bumping versions...
+        ...
+
+        $ flamapy-dev version release 2.2.0
+        ============================================================
+        RELEASE v2.2.0
+        ============================================================
+
+        📋 Step 1: Running tests...
+          ✓ flamapy_fw
+          ✓ fm_metamodel
+        ...
     """
     import subprocess
 

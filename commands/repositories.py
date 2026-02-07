@@ -1,3 +1,15 @@
+"""
+Git repository management commands for flamapy-dev.
+
+This module provides commands for managing multiple Git repositories
+simultaneously, including cloning, branching, committing, and tagging.
+
+Example usage:
+    $ flamapy-dev git clone
+    $ flamapy-dev git branch
+    $ flamapy-dev git commit-all "feat: add new feature"
+"""
+
 import click
 import subprocess
 import os
@@ -10,14 +22,27 @@ from packaging.requirements import Requirement
 from commands.versions import extract_current_version
 
 
-def _parse_requirements(req_file: str):
-    """Return a list of Requirement objects for the given requirements file."""
+def _parse_requirements(req_file: str) -> list[Requirement]:
+    """
+    Parse a requirements.txt file and return a list of Requirement objects.
+
+    Args:
+        req_file: Path to the requirements.txt file.
+
+    Returns:
+        List of packaging.requirements.Requirement objects.
+
+    Example:
+        >>> reqs = _parse_requirements("requirements.txt")
+        >>> for req in reqs:
+        ...     print(req.name, req.specifier)
+    """
     requirements = []
     if not os.path.exists(req_file):
         return requirements
     with open(req_file, "r", encoding="utf-8") as f:
         for line in f:
-            line = line.strip() # noqa: PLW2901
+            line = line.strip()
             if not line or line.startswith("#"):
                 continue
             try:
@@ -28,11 +53,25 @@ def _parse_requirements(req_file: str):
 
 
 def _package_available(req: Requirement) -> bool:
-    """Return True if the given requirement is satisfied by a version on PyPI."""
+    """
+    Check if a package version is available on PyPI.
+
+    Args:
+        req: A Requirement object specifying the package and version constraints.
+
+    Returns:
+        True if the package version is available on PyPI, False otherwise.
+
+    Example:
+        >>> from packaging.requirements import Requirement
+        >>> req = Requirement("flamapy-fw~=2.1.0")
+        >>> _package_available(req)
+        True
+    """
     url = f"https://pypi.org/pypi/{req.name}/json"
     try:
         with request.urlopen(url, timeout=10) as resp:
-            if resp.status != 200: # noqa: PLR2004
+            if resp.status != 200:
                 return False
             data = json.load(resp)
     except error.URLError:
@@ -51,8 +90,21 @@ def _package_available(req: Requirement) -> bool:
     return False
 
 
-def wait_for_requirements(req_file: str, check_interval: int = 10):
-    """Block until all requirements from req_file are available on PyPI."""
+def wait_for_requirements(req_file: str, check_interval: int = 10) -> None:
+    """
+    Block until all requirements from a file are available on PyPI.
+
+    This function is useful when releasing packages that depend on each other,
+    ensuring that dependencies are published before dependent packages are tagged.
+
+    Args:
+        req_file: Path to the requirements.txt file.
+        check_interval: Seconds to wait between PyPI checks (default: 10).
+
+    Example:
+        >>> wait_for_requirements("requirements.txt")
+        # Blocks until all packages in requirements.txt are on PyPI
+    """
     requirements = _parse_requirements(req_file)
     if not requirements:
         return
@@ -64,8 +116,20 @@ def wait_for_requirements(req_file: str, check_interval: int = 10):
 
 @click.group()
 @click.pass_context
-def git(ctx):
-    """Git-related commands."""
+def git(ctx: click.Context) -> None:
+    """
+    Git-related commands for managing multiple repositories.
+
+    This command group provides tools for cloning, updating, and managing
+    multiple Git repositories simultaneously.
+
+    \b
+    Examples:
+        $ flamapy-dev git clone          # Clone all repositories
+        $ flamapy-dev git pull           # Pull all repositories
+        $ flamapy-dev git branch         # Show branches of all repos
+        $ flamapy-dev git status         # Show status of all repos
+    """
     ctx.ensure_object(dict)
     ctx.obj["REPOS"] = ctx.obj.get("REPOS", {})
     ctx.obj["PARENT_DIR"] = ctx.obj.get("PARENT_DIR", "")
@@ -73,8 +137,19 @@ def git(ctx):
 
 @git.command()
 @click.pass_context
-def clone(ctx):
-    """Clone all repositories."""
+def clone(ctx: click.Context) -> None:
+    """
+    Clone all repositories defined in the configuration.
+
+    Clones each repository to a subdirectory of the parent directory.
+    Skips repositories that already exist.
+
+    \b
+    Example:
+        $ flamapy-dev git clone
+        Cloning flamapy_fw from https://github.com/flamapy/flamapy_fw.git...
+        Cloning fm_metamodel from https://github.com/flamapy/fm_metamodel.git...
+    """
     repos = ctx.obj["REPOS"]
     parent_dir = ctx.obj["PARENT_DIR"]
     for repo_name, repo_url in repos.items():
@@ -88,8 +163,19 @@ def clone(ctx):
 
 @git.command()
 @click.pass_context
-def switch_develop(ctx):
-    """Switch all repositories to the develop branch if it exists."""
+def switch_develop(ctx: click.Context) -> None:
+    """
+    Switch all repositories to the 'develop' branch.
+
+    If the branch exists locally, switches to it. If it only exists on
+    the remote, fetches and creates a local tracking branch.
+
+    \b
+    Example:
+        $ flamapy-dev git switch_develop
+        Switching flamapy_fw to branch develop...
+        Switching fm_metamodel to branch develop...
+    """
     repos = ctx.obj["REPOS"]
     parent_dir = ctx.obj["PARENT_DIR"]
     for repo_name in repos:
@@ -125,8 +211,19 @@ def switch_develop(ctx):
 
 @click.command(name="switch-main")
 @click.pass_context
-def switch_main(ctx):
-    """Switch all repositories to the main branch if it exists, otherwise to master."""
+def switch_main(ctx: click.Context) -> None:
+    """
+    Switch all repositories to 'main' or 'master' branch.
+
+    Attempts to switch to 'main' first. If it doesn't exist,
+    falls back to 'master'.
+
+    \b
+    Example:
+        $ flamapy-dev git switch-main
+        Switching flamapy_fw to branch main...
+        Switching fm_metamodel to branch main...
+    """
     repos = ctx.obj["REPOS"]
     parent_dir = ctx.obj["PARENT_DIR"]
     for repo_name in repos:
@@ -161,8 +258,18 @@ def switch_main(ctx):
 
 @click.command()
 @click.pass_context
-def pull(ctx):
-    """Pull the latest changes for all repositories."""
+def pull(ctx: click.Context) -> None:
+    """
+    Pull the latest changes for all repositories.
+
+    Executes 'git pull' in each repository directory.
+
+    \b
+    Example:
+        $ flamapy-dev git pull
+        Pulling latest changes for flamapy_fw...
+        Already up to date.
+    """
     repos = ctx.obj["REPOS"]
     parent_dir = ctx.obj["PARENT_DIR"]
     for repo_name in repos:
@@ -176,8 +283,19 @@ def pull(ctx):
 
 @click.command()
 @click.pass_context
-def status(ctx):
-    """Show status of all repositories."""
+def status(ctx: click.Context) -> None:
+    """
+    Show the Git status of all repositories.
+
+    Executes 'git status' in each repository directory.
+
+    \b
+    Example:
+        $ flamapy-dev git status
+        Status of flamapy_fw:
+        On branch develop
+        nothing to commit, working tree clean
+    """
     repos = ctx.obj["REPOS"]
     parent_dir = ctx.obj["PARENT_DIR"]
     for repo_name in repos:
@@ -191,8 +309,19 @@ def status(ctx):
 
 @click.command()
 @click.pass_context
-def delete(ctx):
-    """Delete all repository directories."""
+def delete(ctx: click.Context) -> None:
+    """
+    Delete all repository directories.
+
+    WARNING: This permanently deletes all cloned repositories.
+    Use with caution.
+
+    \b
+    Example:
+        $ flamapy-dev git delete
+        Deleting directory ./flamapy_fw...
+        Deleting directory ./fm_metamodel...
+    """
     repos = ctx.obj["REPOS"]
     parent_dir = ctx.obj["PARENT_DIR"]
     for repo_name in repos:
@@ -207,8 +336,22 @@ def delete(ctx):
 @git.command()
 @click.argument("tag")
 @click.pass_context
-def tag_repo(ctx, tag):
-    """Create and push a Git tag to all repositories."""
+def tag_repo(ctx: click.Context, tag: str) -> None:
+    """
+    Create and push a Git tag to all repositories.
+
+    Waits for PyPI dependencies to be available before tagging each repo.
+
+    \b
+    Args:
+        tag: The tag name to create (e.g., "v2.1.0")
+
+    \b
+    Example:
+        $ flamapy-dev git tag_repo v2.1.0
+        Tagging flamapy_fw with v2.1.0...
+        Pushing tag v2.1.0 for flamapy_fw...
+    """
     repos = ctx.obj["REPOS"]
     parent_dir = ctx.obj["PARENT_DIR"]
     for repo_name in repos:
@@ -228,8 +371,20 @@ def tag_repo(ctx, tag):
 
 @git.command(name="tag-from-setup")
 @click.pass_context
-def tag_from_setup(ctx):
-    """Create and push a Git tag for each repository based on its setup.py version."""
+def tag_from_setup(ctx: click.Context) -> None:
+    """
+    Create and push Git tags based on setup.py versions.
+
+    Reads the version from each repository's setup.py and creates
+    a tag with the format "v{version}". Waits for PyPI dependencies
+    before tagging.
+
+    \b
+    Example:
+        $ flamapy-dev git tag-from-setup
+        Tagging flamapy_fw with v2.1.0...
+        Pushing tag v2.1.0 for flamapy_fw...
+    """
     repos = ctx.obj["REPOS"]
     parent_dir = ctx.obj["PARENT_DIR"]
     for repo_name in repos:
@@ -255,8 +410,24 @@ def tag_from_setup(ctx):
 
 @git.command(name="branch")
 @click.pass_context
-def branch(ctx):
-    """Show current branch for all repositories."""
+def branch(ctx: click.Context) -> None:
+    """
+    Show the current branch for all repositories.
+
+    Displays each repository's current branch and checks if all
+    repositories are on the same branch.
+
+    \b
+    Example:
+        $ flamapy-dev git branch
+        ==================================================
+        REPOSITORY BRANCHES
+        ==================================================
+          flamapy_fw: develop
+          fm_metamodel: develop
+        ==================================================
+        ✓ All repos on branch: develop
+    """
     repos = ctx.obj["REPOS"]
     parent_dir = ctx.obj["PARENT_DIR"]
 
@@ -281,7 +452,6 @@ def branch(ctx):
         else:
             click.echo(f"  {repo_name}: (not cloned)")
 
-    # Check if all branches are the same
     unique_branches = set(branches.values())
     click.echo("=" * 50)
     if len(unique_branches) == 1:
@@ -292,8 +462,20 @@ def branch(ctx):
 
 @git.command(name="diff")
 @click.pass_context
-def diff(ctx):
-    """Show uncommitted changes in all repositories."""
+def diff(ctx: click.Context) -> None:
+    """
+    Show uncommitted changes in all repositories.
+
+    Displays a summary of changes (--stat) for each repository
+    that has uncommitted modifications.
+
+    \b
+    Example:
+        $ flamapy-dev git diff
+        === flamapy_fw ===
+         setup.py | 2 +-
+         1 file changed, 1 insertion(+), 1 deletion(-)
+    """
     repos = ctx.obj["REPOS"]
     parent_dir = ctx.obj["PARENT_DIR"]
 
@@ -315,8 +497,24 @@ def diff(ctx):
 @git.command(name="commit-all")
 @click.argument("message")
 @click.pass_context
-def commit_all(ctx, message):
-    """Commit all changes in all repositories with the same message."""
+def commit_all(ctx: click.Context, message: str) -> None:
+    """
+    Commit all changes in all repositories with the same message.
+
+    Stages all changes (git add -A) and commits with the provided
+    message. Skips repositories with no changes.
+
+    \b
+    Args:
+        message: The commit message to use for all repositories.
+
+    \b
+    Example:
+        $ flamapy-dev git commit-all "feat: add new feature"
+        ✓ flamapy_fw: committed
+        ✓ fm_metamodel: committed
+        Committed: 2, Skipped (no changes): 4
+    """
     repos = ctx.obj["REPOS"]
     parent_dir = ctx.obj["PARENT_DIR"]
     committed = []
@@ -327,7 +525,6 @@ def commit_all(ctx, message):
         if not os.path.isdir(os.path.join(repo_dir, ".git")):
             continue
 
-        # Check if there are changes to commit
         result = subprocess.run(
             ["git", "status", "--porcelain"],
             cwd=repo_dir,
@@ -340,7 +537,6 @@ def commit_all(ctx, message):
             skipped.append(repo_name)
             continue
 
-        # Stage all changes and commit
         subprocess.run(["git", "add", "-A"], cwd=repo_dir, check=True)
         result = subprocess.run(
             ["git", "commit", "-m", message],
@@ -361,8 +557,19 @@ def commit_all(ctx, message):
 
 @git.command(name="push-all")
 @click.pass_context
-def push_all(ctx):
-    """Push all repositories to their remote."""
+def push_all(ctx: click.Context) -> None:
+    """
+    Push all repositories to their remote.
+
+    Executes 'git push' in each repository directory.
+
+    \b
+    Example:
+        $ flamapy-dev git push-all
+        ✓ flamapy_fw: pushed
+        ✓ fm_metamodel: pushed
+        Pushed: 6, Failed: 0
+    """
     repos = ctx.obj["REPOS"]
     parent_dir = ctx.obj["PARENT_DIR"]
     pushed = []

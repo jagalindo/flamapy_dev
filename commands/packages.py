@@ -1,3 +1,16 @@
+"""
+Python package management commands for flamapy-dev.
+
+This module provides commands for installing, updating, and removing
+Python packages across all repositories.
+
+Example usage:
+    $ flamapy-dev pip install
+    $ flamapy-dev pip install-dev
+    $ flamapy-dev pip update
+    $ flamapy-dev pip remove
+"""
+
 import click
 import subprocess
 import os
@@ -5,15 +18,37 @@ import os
 
 @click.group()
 @click.pass_context
-def pip(ctx):
-    """Commands for managing Python dependencies."""
+def pip(ctx: click.Context) -> None:
+    """
+    Commands for managing Python dependencies.
+
+    This command group provides tools for installing, updating,
+    and removing packages across all flamapy repositories.
+
+    \b
+    Examples:
+        $ flamapy-dev pip install       # Install all packages
+        $ flamapy-dev pip install-dev   # Install in editable mode
+        $ flamapy-dev pip update        # Update all packages
+        $ flamapy-dev pip remove        # Uninstall all packages
+    """
     ctx.ensure_object(dict)
     ctx.obj["PARENT_DIR"] = ctx.obj.get("PARENT_DIR", "")
     ctx.obj["REPOS"] = ctx.obj.get("REPOS", {})
-    pass
 
 
-def process_directories(ctx, command):
+def process_directories(ctx: click.Context, command: str) -> None:
+    """
+    Execute a pip command in all repository directories.
+
+    Args:
+        ctx: Click context with REPOS and PARENT_DIR.
+        command: The pip command to execute (e.g., "install", "install --upgrade").
+
+    Example:
+        >>> process_directories(ctx, "install")
+        # Runs "pip install ." in each repository
+    """
     parent_dir = ctx.obj["PARENT_DIR"]
     repos = ctx.obj["REPOS"]
     for repo_name in repos:
@@ -32,15 +67,42 @@ def process_directories(ctx, command):
 
 @click.command()
 @click.pass_context
-def install(ctx):
-    """Install dependencies from each directory's setup.py."""
+def install(ctx: click.Context) -> None:
+    """
+    Install packages from each repository's setup.py.
+
+    Runs 'pip install .' in each repository directory.
+    Packages are installed in the order defined in REPOS
+    to ensure dependencies are satisfied.
+
+    \b
+    Example:
+        $ flamapy-dev pip install
+        Checking: /path/to/flamapy_fw/setup.py
+        Processing /path/to/flamapy_fw...
+        Successfully installed flamapy-fw-2.1.0
+    """
     process_directories(ctx, "install")
 
 
 @click.command(name="install-dev")
 @click.pass_context
-def install_dev(ctx):
-    """Install packages in editable mode for development."""
+def install_dev(ctx: click.Context) -> None:
+    """
+    Install packages in editable mode for development.
+
+    Runs 'pip install -e .' in each repository directory.
+    Editable mode allows code changes to take effect immediately
+    without reinstalling.
+
+    \b
+    Example:
+        $ flamapy-dev pip install-dev
+        Installing flamapy_fw in editable mode...
+          ✓ flamapy_fw installed
+        Installing fm_metamodel in editable mode...
+          ✓ fm_metamodel installed
+    """
     parent_dir = ctx.obj["PARENT_DIR"]
     repos = ctx.obj["REPOS"]
     for repo_name in repos:
@@ -64,15 +126,37 @@ def install_dev(ctx):
 
 @click.command()
 @click.pass_context
-def update(ctx):
-    """Update dependencies from each directory's setup.py."""
+def update(ctx: click.Context) -> None:
+    """
+    Update packages from each repository's setup.py.
+
+    Runs 'pip install --upgrade .' in each repository directory.
+
+    \b
+    Example:
+        $ flamapy-dev pip update
+        Checking: /path/to/flamapy_fw/setup.py
+        Processing /path/to/flamapy_fw...
+        Successfully installed flamapy-fw-2.2.0
+    """
     process_directories(ctx, "install --upgrade")
 
 
 @click.command()
 @click.pass_context
-def remove(ctx):
-    """Uninstall packages from each directory's setup.py."""
+def remove(ctx: click.Context) -> None:
+    """
+    Uninstall packages from each repository's setup.py.
+
+    Runs 'pip uninstall -y .' in each repository directory.
+
+    \b
+    Example:
+        $ flamapy-dev pip remove
+        Checking: /path/to/flamapy_fw/setup.py
+        Processing /path/to/flamapy_fw...
+        Successfully uninstalled flamapy-fw-2.1.0
+    """
     process_directories(ctx, "uninstall -y")
 
 
