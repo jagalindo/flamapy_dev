@@ -253,6 +253,144 @@ def tag_from_setup(ctx):
             click.echo(f"{repo_name} does not exist.")
 
 
+@git.command(name="branch")
+@click.pass_context
+def branch(ctx):
+    """Show current branch for all repositories."""
+    repos = ctx.obj["REPOS"]
+    parent_dir = ctx.obj["PARENT_DIR"]
+
+    click.echo("\n" + "=" * 50)
+    click.echo("REPOSITORY BRANCHES")
+    click.echo("=" * 50)
+
+    branches = {}
+    for repo_name in repos:
+        repo_dir = os.path.join(parent_dir, repo_name)
+        if os.path.isdir(os.path.join(repo_dir, ".git")):
+            result = subprocess.run(
+                ["git", "branch", "--show-current"],
+                cwd=repo_dir,
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            current_branch = result.stdout.strip() or "(detached)"
+            branches[repo_name] = current_branch
+            click.echo(f"  {repo_name}: {current_branch}")
+        else:
+            click.echo(f"  {repo_name}: (not cloned)")
+
+    # Check if all branches are the same
+    unique_branches = set(branches.values())
+    click.echo("=" * 50)
+    if len(unique_branches) == 1:
+        click.echo(f"✓ All repos on branch: {list(unique_branches)[0]}")
+    else:
+        click.echo("⚠ Repos are on different branches!")
+
+
+@git.command(name="diff")
+@click.pass_context
+def diff(ctx):
+    """Show uncommitted changes in all repositories."""
+    repos = ctx.obj["REPOS"]
+    parent_dir = ctx.obj["PARENT_DIR"]
+
+    for repo_name in repos:
+        repo_dir = os.path.join(parent_dir, repo_name)
+        if os.path.isdir(os.path.join(repo_dir, ".git")):
+            result = subprocess.run(
+                ["git", "diff", "--stat"],
+                cwd=repo_dir,
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            if result.stdout.strip():
+                click.echo(f"\n=== {repo_name} ===")
+                click.echo(result.stdout)
+
+
+@git.command(name="commit-all")
+@click.argument("message")
+@click.pass_context
+def commit_all(ctx, message):
+    """Commit all changes in all repositories with the same message."""
+    repos = ctx.obj["REPOS"]
+    parent_dir = ctx.obj["PARENT_DIR"]
+    committed = []
+    skipped = []
+
+    for repo_name in repos:
+        repo_dir = os.path.join(parent_dir, repo_name)
+        if not os.path.isdir(os.path.join(repo_dir, ".git")):
+            continue
+
+        # Check if there are changes to commit
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+            check=False
+        )
+
+        if not result.stdout.strip():
+            skipped.append(repo_name)
+            continue
+
+        # Stage all changes and commit
+        subprocess.run(["git", "add", "-A"], cwd=repo_dir, check=True)
+        result = subprocess.run(
+            ["git", "commit", "-m", message],
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+            check=False
+        )
+
+        if result.returncode == 0:
+            committed.append(repo_name)
+            click.echo(f"✓ {repo_name}: committed")
+        else:
+            click.echo(f"✗ {repo_name}: {result.stderr.strip()}")
+
+    click.echo(f"\nCommitted: {len(committed)}, Skipped (no changes): {len(skipped)}")
+
+
+@git.command(name="push-all")
+@click.pass_context
+def push_all(ctx):
+    """Push all repositories to their remote."""
+    repos = ctx.obj["REPOS"]
+    parent_dir = ctx.obj["PARENT_DIR"]
+    pushed = []
+    failed = []
+
+    for repo_name in repos:
+        repo_dir = os.path.join(parent_dir, repo_name)
+        if not os.path.isdir(os.path.join(repo_dir, ".git")):
+            continue
+
+        result = subprocess.run(
+            ["git", "push"],
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+            check=False
+        )
+
+        if result.returncode == 0:
+            pushed.append(repo_name)
+            click.echo(f"✓ {repo_name}: pushed")
+        else:
+            failed.append(repo_name)
+            click.echo(f"✗ {repo_name}: {result.stderr.strip()}")
+
+    click.echo(f"\nPushed: {len(pushed)}, Failed: {len(failed)}")
+
+
 git.add_command(clone)
 git.add_command(switch_develop)
 git.add_command(switch_main)
@@ -261,3 +399,7 @@ git.add_command(delete)
 git.add_command(status)
 git.add_command(tag_repo)
 git.add_command(tag_from_setup)
+git.add_command(branch)
+git.add_command(diff)
+git.add_command(commit_all)
+git.add_command(push_all)
