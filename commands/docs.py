@@ -130,9 +130,14 @@ def generate(ctx: click.Context, output: str) -> None:
     from flamapy_dev import cli
 
     lines = [
+        "---",
+        "layout: default",
+        "title: CLI Reference",
+        "---",
+        "",
         "# Flamapy-Dev CLI Reference",
         "",
-        "This document provides a complete reference for the flamapy-dev CLI tool.",
+        "Complete reference for the flamapy-dev command-line interface.",
         "",
         "## Table of Contents",
         "",
@@ -141,6 +146,9 @@ def generate(ctx: click.Context, output: str) -> None:
         "- [Pip Commands](#pip-commands)",
         "- [Make Commands](#make-commands)",
         "- [Version Commands](#version-commands)",
+        "- [Docs Commands](#docs-commands)",
+        "",
+        "---",
         "",
     ]
 
@@ -148,22 +156,26 @@ def generate(ctx: click.Context, output: str) -> None:
     lines.extend([
         "## Global Options",
         "",
-        "```",
+        "```bash",
         "flamapy-dev [OPTIONS] COMMAND [ARGS]...",
-        "",
-        "Options:",
-        "  -d, --parent-dir PATH  Parent directory where operations should be performed.",
-        "  --help                 Show this message and exit.",
         "```",
+        "",
+        "| Option | Description |",
+        "|--------|-------------|",
+        "| `-d, --parent-dir PATH` | Parent directory where operations should be performed |",
+        "| `--help` | Show help message and exit |",
+        "",
+        "---",
         "",
     ])
 
     # Document each command group
     command_groups = [
-        ("git", "Git Commands", "Git repository management"),
-        ("pip", "Pip Commands", "Python package management"),
-        ("make", "Make Commands", "Make target execution"),
-        ("version", "Version Commands", "Version management"),
+        ("git", "Git Commands", "Repository management commands for cloning, pulling, branching, and tagging"),
+        ("pip", "Pip Commands", "Python package management for installing, updating, and removing packages"),
+        ("make", "Make Commands", "Execute make targets (lint, test, mypy) across all repositories"),
+        ("version", "Version Commands", "Version management for viewing, checking, bumping, and releasing"),
+        ("docs", "Docs Commands", "Documentation generation and display"),
     ]
 
     for group_name, title, description in command_groups:
@@ -176,52 +188,84 @@ def generate(ctx: click.Context, output: str) -> None:
             "",
             f"{description}.",
             "",
-        ])
-
-        # Get group help
-        group_ctx = click.Context(group, info_name=group_name)
-        lines.extend([
-            "```",
-            f"flamapy-dev {group_name} [OPTIONS] COMMAND [ARGS]...",
+            "```bash",
+            f"flamapy-dev {group_name} COMMAND [OPTIONS]",
             "```",
             "",
         ])
 
         # Document subcommands
         if isinstance(group, click.Group):
+            # Create summary table
+            lines.append("| Command | Description |")
+            lines.append("|---------|-------------|")
             for cmd_name, cmd in sorted(group.commands.items()):
-                cmd_ctx = click.Context(cmd, parent=group_ctx, info_name=cmd_name)
-                help_text = cmd.get_short_help_str()
+                short_help = cmd.get_short_help_str(limit=60)
+                lines.append(f"| [`{cmd_name}`](#{group_name}-{cmd_name}) | {short_help} |")
+            lines.append("")
+
+            # Detailed documentation for each command
+            for cmd_name, cmd in sorted(group.commands.items()):
                 docstring = cmd.help or ""
+                short_help = cmd.get_short_help_str()
 
                 lines.extend([
-                    f"### `{group_name} {cmd_name}`",
+                    f"### {group_name} {cmd_name}",
                     "",
-                    help_text,
+                    short_help,
                     "",
                 ])
+
+                # Get parameters
+                cmd_ctx = click.Context(cmd, info_name=cmd_name)
+                params = []
+                for param in cmd.params:
+                    if isinstance(param, click.Option):
+                        opts = ", ".join(param.opts)
+                        help_text = param.help or ""
+                        params.append(f"| `{opts}` | {help_text} |")
+                    elif isinstance(param, click.Argument):
+                        params.append(f"| `{param.name.upper()}` | Required argument |")
+
+                if params:
+                    lines.append("**Options:**")
+                    lines.append("")
+                    lines.append("| Option | Description |")
+                    lines.append("|--------|-------------|")
+                    lines.extend(params)
+                    lines.append("")
 
                 # Extract example from docstring if present
                 if "Example:" in docstring:
                     example_start = docstring.find("Example:")
                     example_text = docstring[example_start:]
-                    # Clean up the example
                     example_lines = example_text.split("\n")
+
+                    lines.append("**Example:**")
+                    lines.append("")
                     lines.append("```bash")
                     for line in example_lines[1:]:
                         line = line.strip()
                         if line.startswith("$"):
-                            lines.append(line[2:])  # Remove "$ "
-                        elif line and not line.startswith("Options:") and not line.startswith("Args:"):
-                            if line.startswith("flamapy"):
-                                lines.append(line)
+                            lines.append(line[2:])
+                        elif line.startswith("flamapy"):
+                            lines.append(line)
+                        elif line.startswith("===") or line.startswith("---"):
+                            break
                     lines.append("```")
                     lines.append("")
 
-        lines.append("")
+        lines.extend(["---", ""])
+
+    # Footer
+    lines.extend([
+        "",
+        "*Generated automatically by `flamapy-dev docs generate`*",
+    ])
 
     # Write the file
     output_path = Path(output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text("\n".join(lines), encoding="utf-8")
     click.echo(f"✓ Documentation generated: {output}")
 
