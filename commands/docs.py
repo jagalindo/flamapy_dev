@@ -30,9 +30,9 @@ def docs(ctx: click.Context) -> None:
     ctx.ensure_object(dict)
 
 
-def _get_cli():  # noqa: PLC0415
+def _get_cli():
     """Import and return the CLI object (avoids circular import)."""
-    from flamapy_dev import cli
+    from flamapy_dev import cli  # noqa: PLC0415
     return cli
 
 

@@ -11,10 +11,14 @@ Example usage:
     $ flamapy-dev version release 2.2.0
 """
 
+import subprocess
+
 import click
 import os
 import re
 from pathlib import Path
+
+from commands.repositories import wait_for_requirements
 
 
 def extract_current_version(setup_path: Path) -> str:
@@ -411,7 +415,6 @@ def bump(ctx: click.Context, new_version: str, dry_run: bool) -> None:
 
 def _run_tests(parent_dir: str, repos: dict) -> bool:
     """Run tests in all repos. Returns True if all pass."""
-    import subprocess
     click.echo("\n📋 Step 1: Running tests...")
     for repo_name in repos:
         repo_dir = os.path.join(parent_dir, repo_name)
@@ -429,7 +432,6 @@ def _run_tests(parent_dir: str, repos: dict) -> bool:
 
 def _commit_all(parent_dir: str, repos: dict, message: str) -> None:
     """Commit changes in all repos."""
-    import subprocess
     click.echo("\n📋 Step 3: Committing changes...")
     for repo_name in repos:
         repo_dir = os.path.join(parent_dir, repo_name)
@@ -448,7 +450,6 @@ def _commit_all(parent_dir: str, repos: dict, message: str) -> None:
 
 def _push_all(parent_dir: str, repos: dict) -> None:
     """Push all repos to remote."""
-    import subprocess
     click.echo("\n📋 Step 4: Pushing commits...")
     for repo_name in repos:
         repo_dir = os.path.join(parent_dir, repo_name)
@@ -465,9 +466,6 @@ def _push_all(parent_dir: str, repos: dict) -> None:
 
 def _tag_all(parent_dir: str, repos: dict, new_version: str) -> None:
     """Create and push tags for all repos."""
-    import subprocess
-    from commands.repositories import wait_for_requirements
-
     click.echo("\n📋 Step 5: Creating and pushing tags...")
     click.echo("  (Waiting for PyPI availability between repos...)")
 
