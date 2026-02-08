@@ -18,8 +18,6 @@ import os
 import re
 from pathlib import Path
 
-from commands.repositories import wait_for_requirements
-
 
 def extract_current_version(setup_path: Path) -> str:
     """
@@ -466,6 +464,8 @@ def _push_all(parent_dir: str, repos: dict) -> None:
 
 def _tag_all(parent_dir: str, repos: dict, new_version: str) -> None:
     """Create and push tags for all repos."""
+    from commands.repositories import wait_for_requirements  # noqa: PLC0415
+
     click.echo("\n📋 Step 5: Creating and pushing tags...")
     click.echo("  (Waiting for PyPI availability between repos...)")
 
