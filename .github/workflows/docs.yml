@@ -31,23 +31,25 @@ jobs:
           python -m pip install --upgrade pip
           pip install click packaging
 
-      - name: Generate documentation
+      - name: Generate CLI reference
         run: |
           mkdir -p docs
           python flamapy_dev.py docs generate -o docs/cli-reference.md
 
       - name: Create documentation site
         run: |
-          # Create index page
-          cat > docs/index.md << 'EOF'
+          # ── index.md ────────────────────────────────────────────
+          cat > docs/index.md << 'HEREDOC'
           ---
           layout: default
-          title: Flamapy-Dev Documentation
+          title: Home
           ---
 
           # Flamapy-Dev CLI Tool
 
-          A command-line interface for managing multiple flamapy repositories simultaneously.
+          A command-line interface for managing multiple
+          [flamapy](https://github.com/flamapy) repositories simultaneously.
+          Clone, build, test, version-bump, and release all packages in one go.
 
           ## Quick Start
 
@@ -61,78 +63,356 @@ jobs:
           # Install in development mode
           flamapy-dev pip install-dev
 
+          # Run all quality checks
+          flamapy-dev make all
+
           # Show package versions
           flamapy-dev version show
           ```
 
           ## Documentation
 
-          - [CLI Reference](cli-reference.md) - Complete command reference
-          - [GitHub Repository](https://github.com/jagalindo/flamapy_dev)
+          | Page | Description |
+          |------|-------------|
+          | [Getting Started](getting-started.md) | Installation, setup, and first steps |
+          | [Workflows](workflows.md) | Common development and release workflows |
+          | [CLI Reference](cli-reference.md) | Complete command reference |
 
           ## Command Groups
 
-          | Group | Description |
-          |-------|-------------|
-          | `git` | Repository management (clone, pull, branch, commit, push) |
-          | `pip` | Package management (install, update, remove) |
-          | `make` | Run make targets (lint, test, mypy) |
-          | `version` | Version management (show, check, bump, release) |
-          | `docs` | Documentation generation |
+          | Group | Description | Key Commands |
+          |-------|-------------|--------------|
+          | **git** | Repository management | `clone`, `pull`, `branch`, `commit-all`, `push-all`, `tag-from-setup` |
+          | **pip** | Package management | `install`, `install-dev`, `update`, `remove` |
+          | **make** | Quality checks | `lint`, `test`, `mypy`, `all` |
+          | **version** | Version management | `show`, `check`, `bump`, `release` |
+          | **docs** | Documentation | `show`, `generate`, `help-all` |
+          HEREDOC
 
-          ## Examples
+          # ── getting-started.md ──────────────────────────────────
+          cat > docs/getting-started.md << 'HEREDOC'
+          ---
+          layout: default
+          title: Getting Started
+          ---
 
-          ### Managing Repositories
+          # Getting Started
+
+          ## Requirements
+
+          - Python >= 3.9
+          - Git
+
+          ## Installation
+
+          ### From PyPI (recommended)
 
           ```bash
-          # Clone all repos
-          flamapy-dev git clone
-
-          # Check branch status
-          flamapy-dev git branch
-
-          # Pull all repos
-          flamapy-dev git pull
-
-          # Commit all changes
-          flamapy-dev git commit-all "feat: add new feature"
+          pip install flamapy-dev
           ```
 
-          ### Version Management
+          ### From source (for development)
 
           ```bash
-          # Show all versions
+          git clone https://github.com/jagalindo/flamapy_dev.git
+          cd flamapy_dev
+          python -m venv venv
+          source venv/bin/activate
+          pip install -r requirements-dev.txt
+          pip install -e .
+          ```
+
+          ## First Steps
+
+          ### 1. Clone all repositories
+
+          ```bash
+          flamapy-dev git clone
+          ```
+
+          This clones all flamapy repositories into the current directory:
+
+          ```
+          ./
+          ├── flamapy_fw/
+          ├── fm_metamodel/
+          ├── pysat_metamodel/
+          ├── bdd_metamodel/
+          ├── z3_metamodel/
+          └── flamapy/
+          ```
+
+          ### 2. Switch to develop branch
+
+          ```bash
+          flamapy-dev git switch_develop
+          ```
+
+          All repos are switched to the `develop` branch. If the branch only
+          exists on the remote, a local tracking branch is created automatically.
+
+          ### 3. Install in development mode
+
+          ```bash
+          flamapy-dev pip install-dev
+          ```
+
+          Installs every package in editable mode (`pip install -e .`) so code
+          changes take effect immediately without reinstalling.
+
+          Example output:
+
+          ```text
+          Installing flamapy_fw in editable mode...
+            ✓ flamapy_fw installed
+          Installing fm_metamodel in editable mode...
+            ✓ fm_metamodel installed
+          ...
+          ```
+
+          ### 4. Verify the setup
+
+          ```bash
+          flamapy-dev make all -c
+          ```
+
+          Runs lint, mypy, and tests across all repos. The `-c` flag means
+          "continue on error" so you see the full report even if one repo fails.
+
+          ### 5. Check versions
+
+          ```bash
           flamapy-dev version show
+          ```
 
-          # Check version consistency
-          flamapy-dev version check
+          Example output:
 
-          # Bump all versions (dry run)
-          flamapy-dev version bump 2.2.0 --dry-run
+          ```text
+          ============================================================
+          PACKAGE VERSIONS
+          ============================================================
 
-          # Full release
+          flamapy_fw/
+            Package: flamapy-fw v2.1.0
+
+          fm_metamodel/
+            Package: flamapy-fm v2.1.0
+            Internal dependencies:
+              - flamapy-fw~=2.1.0 ✓
+          ```
+
+          ## Using a custom directory
+
+          By default, flamapy-dev operates in the current directory. To use a
+          different workspace:
+
+          ```bash
+          flamapy-dev --parent-dir /path/to/workspace git clone
+          flamapy-dev -d /path/to/workspace version show
+          ```
+
+          ## Next steps
+
+          - [Common Workflows](workflows.md) — day-to-day development patterns
+          - [CLI Reference](cli-reference.md) — complete command documentation
+          HEREDOC
+
+          # ── workflows.md ────────────────────────────────────────
+          cat > docs/workflows.md << 'HEREDOC'
+          ---
+          layout: default
+          title: Workflows
+          ---
+
+          # Common Workflows
+
+          ## Daily development
+
+          ### Pull latest changes and verify
+
+          ```bash
+          flamapy-dev git pull
+          flamapy-dev make all -c
+          ```
+
+          ### Make a cross-repo change
+
+          ```bash
+          # ... edit files across repos ...
+
+          # Review what changed
+          flamapy-dev git diff
+
+          # Run all quality checks
+          flamapy-dev make all -c
+
+          # Commit with the same message everywhere
+          flamapy-dev git commit-all "feat: add new feature"
+
+          # Push all repos
+          flamapy-dev git push-all
+          ```
+
+          ### Check branch alignment
+
+          ```bash
+          flamapy-dev git branch
+          ```
+
+          Example output:
+
+          ```text
+          ==================================================
+          REPOSITORY BRANCHES
+          ==================================================
+            flamapy_fw: develop
+            fm_metamodel: develop
+            pysat_metamodel: develop
+            bdd_metamodel: develop
+            z3_metamodel: develop
+            flamapy: develop
+          ==================================================
+          ✓ All repos on branch: develop
+          ```
+
+          ## Releasing a new version
+
+          ### Step 1 — Preview the release
+
+          ```bash
+          flamapy-dev version release 2.2.0 --dry-run
+          ```
+
+          This shows exactly what will change without modifying any files:
+
+          ```text
+          ============================================================
+          RELEASE v2.2.0
+          ============================================================
+          [DRY RUN MODE - no changes will be made]
+
+          📋 Step 1: Skipping tests
+
+          📋 Step 2: Bumping versions...
+          [DRY RUN] Would bump 6 packages to v2.2.0:
+          flamapy_fw/
+            setup.py: 2.1.0 → 2.2.0
+          fm_metamodel/
+            setup.py: 2.1.0 → 2.2.0
+            requirements.txt: flamapy-fw → 2.2.0
+          ...
+          ```
+
+          ### Step 2 — Execute the release
+
+          ```bash
           flamapy-dev version release 2.2.0
           ```
 
-          ### Quality Checks
+          The release command automatically:
+
+          1. **Runs tests** in all repos
+          2. **Bumps versions** in `setup.py` and `requirements.txt`
+          3. **Commits** changes with message `chore: bump version to 2.2.0`
+          4. **Pushes** commits to remote
+          5. **Tags** each repo with `v2.2.0`, waiting for PyPI availability
+             between dependent packages
+
+          ### Useful options
 
           ```bash
-          # Run all checks
-          flamapy-dev make all
+          # Skip tests (e.g., if CI already passed)
+          flamapy-dev version release 2.2.0 --skip-tests
 
-          # Run with continue on error
+          # Bump versions without releasing
+          flamapy-dev version bump 2.2.0
+
+          # Check version consistency (CI-friendly, exits 1 on mismatch)
+          flamapy-dev version check
+          ```
+
+          ## Version management
+
+          ### Show all versions and dependencies
+
+          ```bash
+          flamapy-dev version show
+          ```
+
+          Displays each package's version and validates internal dependency
+          versions. A `✓` means the dependency version matches, `✗` means
+          there is a mismatch.
+
+          ### Bump without releasing
+
+          ```bash
+          # Preview changes
+          flamapy-dev version bump 2.2.0 --dry-run
+
+          # Apply changes
+          flamapy-dev version bump 2.2.0
+          ```
+
+          This updates `setup.py` versions and `requirements.txt` dependency
+          specifiers across all repos, but does not commit, push, or tag.
+
+          ## Package management
+
+          ### Install for development
+
+          ```bash
+          flamapy-dev pip install-dev
+          ```
+
+          Uses `pip install -e .` so code changes are reflected immediately.
+
+          ### Reinstall everything cleanly
+
+          ```bash
+          flamapy-dev pip remove
+          flamapy-dev pip install-dev
+          ```
+
+          ## Quality checks
+
+          ### Run individual checks
+
+          ```bash
+          flamapy-dev make lint    # Ruff linting
+          flamapy-dev make test    # Pytest
+          flamapy-dev make mypy    # Type checking
+          ```
+
+          ### Run all checks with a summary
+
+          ```bash
           flamapy-dev make all -c
           ```
-          EOF
 
-          # Create Jekyll config
-          cat > docs/_config.yml << 'EOF'
+          The `-c` (`--continue-on-error`) flag ensures all repos are checked
+          even if some fail, giving you a complete summary:
+
+          ```text
+          ============================================================
+          SUMMARY
+          ============================================================
+          Total passed: 18
+          Total failed: 0
+          ```
+
+          ## Next steps
+
+          - [CLI Reference](cli-reference.md) — complete command documentation
+          HEREDOC
+
+          # ── _config.yml ─────────────────────────────────────────
+          cat > docs/_config.yml << 'HEREDOC'
           title: Flamapy-Dev
           description: CLI tool for managing flamapy repositories
           theme: jekyll-theme-cayman
           markdown: kramdown
           highlighter: rouge
-          EOF
+          HEREDOC
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
