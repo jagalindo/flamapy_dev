@@ -11,9 +11,10 @@ Example usage:
     $ flamapy-dev make all
 """
 
-import click
 import subprocess
-import os
+from pathlib import Path
+
+import click
 
 
 @click.group()
@@ -58,14 +59,14 @@ def _run_make(
         >>> succeeded, failed = _run_make(ctx, "test", continue_on_error=True)
         >>> print(f"Passed: {len(succeeded)}, Failed: {len(failed)}")
     """
-    parent_dir = ctx.obj["PARENT_DIR"]
+    parent_dir = Path(ctx.obj["PARENT_DIR"])
     repos = ctx.obj["REPOS"]
-    succeeded = []
-    failed = []
+    succeeded: list[str] = []
+    failed: list[str] = []
 
     for repo_name in repos:
-        repo_dir = os.path.join(parent_dir, repo_name)
-        if os.path.isdir(repo_dir):
+        repo_dir = parent_dir / repo_name
+        if repo_dir.is_dir():
             click.echo(f"\n{'='*50}")
             click.echo(f"Running 'make {target}' in {repo_name}")
             click.echo('='*50)

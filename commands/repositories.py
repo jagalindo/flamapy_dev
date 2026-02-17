@@ -10,110 +10,14 @@ Example usage:
     $ flamapy-dev git commit-all "feat: add new feature"
 """
 
-import click
-import subprocess
-import os
 import shutil
-import time
-import json
+import subprocess
 from pathlib import Path
-from urllib import request, error
-from packaging.requirements import Requirement
+
+import click
+
+from commands.pypi import wait_for_requirements
 from commands.versions import extract_current_version
-
-HTTP_OK = 200
-
-
-def _parse_requirements(req_file: str) -> list[Requirement]:
-    """
-    Parse a requirements.txt file and return a list of Requirement objects.
-
-    Args:
-        req_file: Path to the requirements.txt file.
-
-    Returns:
-        List of packaging.requirements.Requirement objects.
-
-    Example:
-        >>> reqs = _parse_requirements("requirements.txt")
-        >>> for req in reqs:
-        ...     print(req.name, req.specifier)
-    """
-    requirements = []
-    if not os.path.exists(req_file):
-        return requirements
-    with open(req_file, "r", encoding="utf-8") as f:
-        for raw_line in f:
-            stripped = raw_line.strip()
-            if not stripped or stripped.startswith("#"):
-                continue
-            try:
-                requirements.append(Requirement(stripped))
-            except Exception:
-                continue
-    return requirements
-
-
-def _package_available(req: Requirement) -> bool:
-    """
-    Check if a package version is available on PyPI.
-
-    Args:
-        req: A Requirement object specifying the package and version constraints.
-
-    Returns:
-        True if the package version is available on PyPI, False otherwise.
-
-    Example:
-        >>> from packaging.requirements import Requirement
-        >>> req = Requirement("flamapy-fw~=2.1.0")
-        >>> _package_available(req)
-        True
-    """
-    url = f"https://pypi.org/pypi/{req.name}/json"
-    try:
-        with request.urlopen(url, timeout=10) as resp:
-            if resp.status != HTTP_OK:
-                return False
-            data = json.load(resp)
-    except error.URLError:
-        return False
-    except Exception:
-        return False
-    if not req.specifier:
-        return True
-    releases = data.get("releases", {})
-    for ver in releases.keys():
-        try:
-            if req.specifier.contains(ver, prereleases=True):
-                return True
-        except Exception:
-            continue
-    return False
-
-
-def wait_for_requirements(req_file: str, check_interval: int = 10) -> None:
-    """
-    Block until all requirements from a file are available on PyPI.
-
-    This function is useful when releasing packages that depend on each other,
-    ensuring that dependencies are published before dependent packages are tagged.
-
-    Args:
-        req_file: Path to the requirements.txt file.
-        check_interval: Seconds to wait between PyPI checks (default: 10).
-
-    Example:
-        >>> wait_for_requirements("requirements.txt")
-        # Blocks until all packages in requirements.txt are on PyPI
-    """
-    requirements = _parse_requirements(req_file)
-    if not requirements:
-        return
-    while True:
-        if all(_package_available(r) for r in requirements):
-            return
-        time.sleep(check_interval)
 
 
 @click.group()
@@ -153,12 +57,12 @@ def clone(ctx: click.Context) -> None:
         Cloning fm_metamodel from https://github.com/flamapy/fm_metamodel.git...
     """
     repos = ctx.obj["REPOS"]
-    parent_dir = ctx.obj["PARENT_DIR"]
+    parent_dir = Path(ctx.obj["PARENT_DIR"])
     for repo_name, repo_url in repos.items():
-        repo_dir = os.path.join(parent_dir, repo_name)
-        if not os.path.isdir(os.path.join(repo_dir, ".git")):
+        repo_dir = parent_dir / repo_name
+        if not (repo_dir / ".git").is_dir():
             click.echo(f"Cloning {repo_name} from {repo_url}...")
-            subprocess.run(["git", "clone", repo_url, repo_dir], check=True)
+            subprocess.run(["git", "clone", repo_url, str(repo_dir)], check=True)
         else:
             click.echo(f"{repo_name} already exists.")
 
@@ -179,10 +83,10 @@ def switch_develop(ctx: click.Context) -> None:
         Switching fm_metamodel to branch develop...
     """
     repos = ctx.obj["REPOS"]
-    parent_dir = ctx.obj["PARENT_DIR"]
+    parent_dir = Path(ctx.obj["PARENT_DIR"])
     for repo_name in repos:
-        repo_dir = os.path.join(parent_dir, repo_name)
-        if os.path.isdir(os.path.join(repo_dir, ".git")):
+        repo_dir = parent_dir / repo_name
+        if (repo_dir / ".git").is_dir():
             click.echo(f"Switching {repo_name} to branch develop...")
             if (
                 subprocess.run(
@@ -227,10 +131,10 @@ def switch_main(ctx: click.Context) -> None:
         Switching fm_metamodel to branch main...
     """
     repos = ctx.obj["REPOS"]
-    parent_dir = ctx.obj["PARENT_DIR"]
+    parent_dir = Path(ctx.obj["PARENT_DIR"])
     for repo_name in repos:
-        repo_dir = os.path.join(parent_dir, repo_name)
-        if os.path.isdir(os.path.join(repo_dir, ".git")):
+        repo_dir = parent_dir / repo_name
+        if (repo_dir / ".git").is_dir():
             click.echo(f"Checking branches for {repo_name}...")
             if (
                 subprocess.run(
@@ -273,10 +177,10 @@ def pull(ctx: click.Context) -> None:
         Already up to date.
     """
     repos = ctx.obj["REPOS"]
-    parent_dir = ctx.obj["PARENT_DIR"]
+    parent_dir = Path(ctx.obj["PARENT_DIR"])
     for repo_name in repos:
-        repo_dir = os.path.join(parent_dir, repo_name)
-        if os.path.isdir(os.path.join(repo_dir, ".git")):
+        repo_dir = parent_dir / repo_name
+        if (repo_dir / ".git").is_dir():
             click.echo(f"Pulling latest changes for {repo_name}...")
             subprocess.run(["git", "pull"], cwd=repo_dir, check=True)
         else:
@@ -299,10 +203,10 @@ def status(ctx: click.Context) -> None:
         nothing to commit, working tree clean
     """
     repos = ctx.obj["REPOS"]
-    parent_dir = ctx.obj["PARENT_DIR"]
+    parent_dir = Path(ctx.obj["PARENT_DIR"])
     for repo_name in repos:
-        repo_dir = os.path.join(parent_dir, repo_name)
-        if os.path.isdir(os.path.join(repo_dir, ".git")):
+        repo_dir = parent_dir / repo_name
+        if (repo_dir / ".git").is_dir():
             click.echo(f"Status of {repo_name}:")
             subprocess.run(["git", "status"], check=False, cwd=repo_dir)
         else:
@@ -325,10 +229,10 @@ def delete(ctx: click.Context) -> None:
         Deleting directory ./fm_metamodel...
     """
     repos = ctx.obj["REPOS"]
-    parent_dir = ctx.obj["PARENT_DIR"]
+    parent_dir = Path(ctx.obj["PARENT_DIR"])
     for repo_name in repos:
-        repo_dir = os.path.join(parent_dir, repo_name)
-        if os.path.isdir(repo_dir):
+        repo_dir = parent_dir / repo_name
+        if repo_dir.is_dir():
             click.echo(f"Deleting directory {repo_dir}...")
             shutil.rmtree(repo_dir)
         else:
@@ -355,14 +259,14 @@ def tag_repo(ctx: click.Context, tag: str) -> None:
         Pushing tag v2.1.0 for flamapy_fw...
     """
     repos = ctx.obj["REPOS"]
-    parent_dir = ctx.obj["PARENT_DIR"]
+    parent_dir = Path(ctx.obj["PARENT_DIR"])
     for repo_name in repos:
-        repo_dir = os.path.join(parent_dir, repo_name)
-        if os.path.isdir(os.path.join(repo_dir, ".git")):
-            req_file = os.path.join(repo_dir, "requirements.txt")
-            if os.path.exists(req_file):
+        repo_dir = parent_dir / repo_name
+        if (repo_dir / ".git").is_dir():
+            req_file = repo_dir / "requirements.txt"
+            if req_file.exists():
                 click.echo(f"Waiting for PyPI packages of {repo_name}...")
-                wait_for_requirements(req_file)
+                wait_for_requirements(str(req_file))
             click.echo(f"Tagging {repo_name} with {tag}...")
             subprocess.run(["git", "tag", tag], cwd=repo_dir, check=True)
             click.echo(f"Pushing tag {tag} for {repo_name}...")
@@ -388,20 +292,20 @@ def tag_from_setup(ctx: click.Context) -> None:
         Pushing tag v2.1.0 for flamapy_fw...
     """
     repos = ctx.obj["REPOS"]
-    parent_dir = ctx.obj["PARENT_DIR"]
+    parent_dir = Path(ctx.obj["PARENT_DIR"])
     for repo_name in repos:
-        repo_dir = os.path.join(parent_dir, repo_name)
-        if os.path.isdir(os.path.join(repo_dir, ".git")):
-            setup_path = os.path.join(repo_dir, "setup.py")
-            if not os.path.exists(setup_path):
+        repo_dir = parent_dir / repo_name
+        if (repo_dir / ".git").is_dir():
+            setup_path = repo_dir / "setup.py"
+            if not setup_path.exists():
                 click.echo(f"setup.py not found in {repo_name}, skipping.")
                 continue
-            version = extract_current_version(Path(setup_path))
+            version = extract_current_version(setup_path)
             tag = f"v{version}"
-            req_file = os.path.join(repo_dir, "requirements.txt")
-            if os.path.exists(req_file):
+            req_file = repo_dir / "requirements.txt"
+            if req_file.exists():
                 click.echo(f"Waiting for PyPI packages of {repo_name}...")
-                wait_for_requirements(req_file)
+                wait_for_requirements(str(req_file))
             click.echo(f"Tagging {repo_name} with {tag}...")
             subprocess.run(["git", "tag", tag], cwd=repo_dir, check=True)
             click.echo(f"Pushing tag {tag} for {repo_name}...")
@@ -431,16 +335,16 @@ def branch(ctx: click.Context) -> None:
         ✓ All repos on branch: develop
     """
     repos = ctx.obj["REPOS"]
-    parent_dir = ctx.obj["PARENT_DIR"]
+    parent_dir = Path(ctx.obj["PARENT_DIR"])
 
     click.echo("\n" + "=" * 50)
     click.echo("REPOSITORY BRANCHES")
     click.echo("=" * 50)
 
-    branches = {}
+    branches: dict[str, str] = {}
     for repo_name in repos:
-        repo_dir = os.path.join(parent_dir, repo_name)
-        if os.path.isdir(os.path.join(repo_dir, ".git")):
+        repo_dir = parent_dir / repo_name
+        if (repo_dir / ".git").is_dir():
             result = subprocess.run(
                 ["git", "branch", "--show-current"],
                 cwd=repo_dir,
@@ -479,11 +383,11 @@ def diff(ctx: click.Context) -> None:
          1 file changed, 1 insertion(+), 1 deletion(-)
     """
     repos = ctx.obj["REPOS"]
-    parent_dir = ctx.obj["PARENT_DIR"]
+    parent_dir = Path(ctx.obj["PARENT_DIR"])
 
     for repo_name in repos:
-        repo_dir = os.path.join(parent_dir, repo_name)
-        if os.path.isdir(os.path.join(repo_dir, ".git")):
+        repo_dir = parent_dir / repo_name
+        if (repo_dir / ".git").is_dir():
             result = subprocess.run(
                 ["git", "diff", "--stat"],
                 cwd=repo_dir,
@@ -518,13 +422,13 @@ def commit_all(ctx: click.Context, message: str) -> None:
         Committed: 2, Skipped (no changes): 4
     """
     repos = ctx.obj["REPOS"]
-    parent_dir = ctx.obj["PARENT_DIR"]
+    parent_dir = Path(ctx.obj["PARENT_DIR"])
     committed = []
     skipped = []
 
     for repo_name in repos:
-        repo_dir = os.path.join(parent_dir, repo_name)
-        if not os.path.isdir(os.path.join(repo_dir, ".git")):
+        repo_dir = parent_dir / repo_name
+        if not (repo_dir / ".git").is_dir():
             continue
 
         result = subprocess.run(
@@ -573,13 +477,13 @@ def push_all(ctx: click.Context) -> None:
         Pushed: 6, Failed: 0
     """
     repos = ctx.obj["REPOS"]
-    parent_dir = ctx.obj["PARENT_DIR"]
+    parent_dir = Path(ctx.obj["PARENT_DIR"])
     pushed = []
     failed = []
 
     for repo_name in repos:
-        repo_dir = os.path.join(parent_dir, repo_name)
-        if not os.path.isdir(os.path.join(repo_dir, ".git")):
+        repo_dir = parent_dir / repo_name
+        if not (repo_dir / ".git").is_dir():
             continue
 
         result = subprocess.run(
