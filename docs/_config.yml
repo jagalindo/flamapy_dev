@@ -1,0 +1,5 @@
+title: Flamapy-Dev
+description: CLI tool for managing flamapy repositories
+theme: jekyll-theme-cayman
+markdown: kramdown
+highlighter: rouge
