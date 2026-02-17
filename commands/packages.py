@@ -11,9 +11,10 @@ Example usage:
     $ flamapy-dev pip remove
 """
 
-import click
 import subprocess
-import os
+from pathlib import Path
+
+import click
 
 
 @click.group()
@@ -49,18 +50,17 @@ def process_directories(ctx: click.Context, command: str) -> None:
         >>> process_directories(ctx, "install")
         # Runs "pip install ." in each repository
     """
-    parent_dir = ctx.obj["PARENT_DIR"]
+    parent_dir = Path(ctx.obj["PARENT_DIR"])
     repos = ctx.obj["REPOS"]
     for repo_name in repos:
-        repo_dir = os.path.join(parent_dir, repo_name)
-        setup_path = os.path.join(repo_dir, "setup.py")
+        repo_dir = parent_dir / repo_name
+        setup_path = repo_dir / "setup.py"
 
-        absolute_setup_path = os.path.abspath(setup_path)
-        click.echo(f"Checking: {absolute_setup_path}")
+        click.echo(f"Checking: {setup_path.resolve()}")
 
-        if os.path.exists(setup_path):
+        if setup_path.exists():
             click.echo(f"Processing {repo_dir}...")
-            subprocess.run(f"pip {command} .", cwd=repo_dir, shell=True, check=True)
+            subprocess.run(["pip", *command.split(), "."], cwd=repo_dir, check=True)
         else:
             click.echo(f"{repo_dir} does not contain a setup.py file.")
 
@@ -103,13 +103,13 @@ def install_dev(ctx: click.Context) -> None:
         Installing fm_metamodel in editable mode...
           ✓ fm_metamodel installed
     """
-    parent_dir = ctx.obj["PARENT_DIR"]
+    parent_dir = Path(ctx.obj["PARENT_DIR"])
     repos = ctx.obj["REPOS"]
     for repo_name in repos:
-        repo_dir = os.path.join(parent_dir, repo_name)
-        setup_path = os.path.join(repo_dir, "setup.py")
+        repo_dir = parent_dir / repo_name
+        setup_path = repo_dir / "setup.py"
 
-        if os.path.exists(setup_path):
+        if setup_path.exists():
             click.echo(f"Installing {repo_name} in editable mode...")
             result = subprocess.run(
                 ["pip", "install", "-e", "."],

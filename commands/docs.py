@@ -30,7 +30,7 @@ def docs(ctx: click.Context) -> None:
     ctx.ensure_object(dict)
 
 
-def _get_cli():
+def _get_cli() -> click.Group:
     """Import and return the CLI object (avoids circular import)."""
     from flamapy_dev import cli  # noqa: PLC0415
     return cli
@@ -157,7 +157,7 @@ def _extract_params(cmd: click.Command) -> list[str]:
             opts = ", ".join(param.opts)
             help_text = param.help or ""
             params.append(f"| `{opts}` | {help_text} |")
-        elif isinstance(param, click.Argument):
+        elif isinstance(param, click.Argument) and param.name:
             params.append(f"| `{param.name.upper()}` | Required argument |")
     return params
 

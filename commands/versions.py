@@ -12,11 +12,12 @@ Example usage:
 """
 
 import subprocess
-
-import click
-import os
 import re
 from pathlib import Path
+
+import click
+
+from commands.pypi import wait_for_requirements
 
 
 def extract_current_version(setup_path: Path) -> str:
@@ -87,7 +88,7 @@ def parse_requirements(req_path: Path) -> dict[str, str]:
         >>> print(deps)
         {'flamapy-fw': '2.1.0.dev1', 'uvlparser': '2.0.1'}
     """
-    deps = {}
+    deps: dict[str, str] = {}
     if not req_path.exists():
         return deps
     text = req_path.read_text(encoding="utf-8")
@@ -187,7 +188,7 @@ def version(ctx: click.Context) -> None:
         $ flamapy-dev version bump 2.2.0  # Bump all versions
     """
     ctx.ensure_object(dict)
-    ctx.obj["PARENT_DIR"] = ctx.obj.get("PARENT_DIR", os.curdir)
+    ctx.obj["PARENT_DIR"] = ctx.obj.get("PARENT_DIR", ".")
     ctx.obj["REPOS"] = ctx.obj.get("REPOS", {})
 
 
@@ -230,7 +231,7 @@ def show(ctx: click.Context) -> None:
             pkg_name = extract_package_name(setup_py)
             pkg_version = extract_current_version(setup_py)
             pkg_versions[pkg_name] = pkg_version
-        except Exception:
+        except (ValueError, OSError):
             continue
 
     # Second pass: show versions with dependencies
@@ -262,13 +263,13 @@ def show(ctx: click.Context) -> None:
                         actual = pkg_versions.get(dep, "?")
                         status = "✓" if ver == actual else f"✗ (actual: {actual})"
                         click.echo(f"    - {dep}~={ver} {status}")
-        except Exception as e:
+        except (ValueError, OSError) as e:
             click.echo(f"\n{folder}: Error - {e}")
 
     click.echo("\n" + "=" * 60)
 
 
-def _collect_versions(parent_dir: str, repos: dict) -> dict[str, tuple[str, str]]:
+def _collect_versions(parent_dir: str, repos: dict[str, str]) -> dict[str, tuple[str, str]]:
     """Collect package versions from all repos."""
     pkg_versions = {}
     for folder in repos:
@@ -280,12 +281,16 @@ def _collect_versions(parent_dir: str, repos: dict) -> dict[str, tuple[str, str]
             pkg_name = extract_package_name(setup_py)
             pkg_version = extract_current_version(setup_py)
             pkg_versions[pkg_name] = (folder, pkg_version)
-        except Exception:
+        except (ValueError, OSError):
             continue
     return pkg_versions
 
 
-def _find_version_errors(parent_dir: str, repos: dict, pkg_versions: dict) -> list[str]:
+def _find_version_errors(
+    parent_dir: str,
+    repos: dict[str, str],
+    pkg_versions: dict[str, tuple[str, str]],
+) -> list[str]:
     """Find version mismatches in requirements files."""
     errors = []
     for folder in repos:
@@ -337,10 +342,14 @@ def check(ctx: click.Context) -> None:
         click.echo("\n✓ All internal dependencies are in sync!")
 
 
-def _gather_repo_info(parent_dir: str, repos: dict, new_version: str) -> tuple[dict, dict]:
+def _gather_repo_info(
+    parent_dir: str,
+    repos: dict[str, str],
+    new_version: str,
+) -> tuple[dict[str, tuple[str, str]], dict[str, tuple[Path, str, str, str]]]:
     """Gather version info from all repos. Returns (pkg_map, repo_info)."""
-    pkg_map = {}
-    repo_info = {}
+    pkg_map: dict[str, tuple[str, str]] = {}
+    repo_info: dict[str, tuple[Path, str, str, str]] = {}
     for folder in repos:
         repo = Path(parent_dir) / folder
         setup_py = repo / "setup.py"
@@ -352,12 +361,16 @@ def _gather_repo_info(parent_dir: str, repos: dict, new_version: str) -> tuple[d
             pkg_name = extract_package_name(setup_py)
             pkg_map[pkg_name] = (oldv, new_version)
             repo_info[folder] = (repo, pkg_name, oldv, new_version)
-        except Exception as e:
+        except (ValueError, OSError) as e:
             click.echo(f"Error in {folder}: {e}")
     return pkg_map, repo_info
 
 
-def _apply_bump(repo_info: dict, pkg_map: dict, dry_run: bool) -> None:
+def _apply_bump(
+    repo_info: dict[str, tuple[Path, str, str, str]],
+    pkg_map: dict[str, tuple[str, str]],
+    dry_run: bool,
+) -> None:
     """Apply version bumps to all repos."""
     for folder, (repo, _, oldv, newv) in repo_info.items():
         click.echo(f"{folder}/")
@@ -411,12 +424,12 @@ def bump(ctx: click.Context, new_version: str, dry_run: bool) -> None:
         click.echo("\n✓ Bump completed.")
 
 
-def _run_tests(parent_dir: str, repos: dict) -> bool:
+def _run_tests(parent_dir: str, repos: dict[str, str]) -> bool:
     """Run tests in all repos. Returns True if all pass."""
     click.echo("\n📋 Step 1: Running tests...")
     for repo_name in repos:
-        repo_dir = os.path.join(parent_dir, repo_name)
-        if os.path.isdir(repo_dir):
+        repo_dir = Path(parent_dir) / repo_name
+        if repo_dir.is_dir():
             result = subprocess.run(
                 ["make", "test"], cwd=repo_dir, capture_output=True, check=False
             )
@@ -428,12 +441,12 @@ def _run_tests(parent_dir: str, repos: dict) -> bool:
     return True
 
 
-def _commit_all(parent_dir: str, repos: dict, message: str) -> None:
+def _commit_all(parent_dir: str, repos: dict[str, str], message: str) -> None:
     """Commit changes in all repos."""
     click.echo("\n📋 Step 3: Committing changes...")
     for repo_name in repos:
-        repo_dir = os.path.join(parent_dir, repo_name)
-        if not os.path.isdir(os.path.join(repo_dir, ".git")):
+        repo_dir = Path(parent_dir) / repo_name
+        if not (repo_dir / ".git").is_dir():
             continue
         result = subprocess.run(
             ["git", "status", "--porcelain"],
@@ -446,12 +459,12 @@ def _commit_all(parent_dir: str, repos: dict, message: str) -> None:
         click.echo(f"  ✓ {repo_name}")
 
 
-def _push_all(parent_dir: str, repos: dict) -> None:
+def _push_all(parent_dir: str, repos: dict[str, str]) -> None:
     """Push all repos to remote."""
     click.echo("\n📋 Step 4: Pushing commits...")
     for repo_name in repos:
-        repo_dir = os.path.join(parent_dir, repo_name)
-        if os.path.isdir(os.path.join(repo_dir, ".git")):
+        repo_dir = Path(parent_dir) / repo_name
+        if (repo_dir / ".git").is_dir():
             result = subprocess.run(
                 ["git", "push"],
                 cwd=repo_dir, capture_output=True, text=True, check=False
@@ -462,24 +475,22 @@ def _push_all(parent_dir: str, repos: dict) -> None:
                 click.echo(f"  ✗ {repo_name}: {result.stderr.strip()}")
 
 
-def _tag_all(parent_dir: str, repos: dict, new_version: str) -> None:
+def _tag_all(parent_dir: str, repos: dict[str, str], new_version: str) -> None:
     """Create and push tags for all repos."""
-    from commands.repositories import wait_for_requirements  # noqa: PLC0415
-
     click.echo("\n📋 Step 5: Creating and pushing tags...")
     click.echo("  (Waiting for PyPI availability between repos...)")
 
     for repo_name in repos:
-        repo_dir = os.path.join(parent_dir, repo_name)
-        if not os.path.isdir(os.path.join(repo_dir, ".git")):
+        repo_dir = Path(parent_dir) / repo_name
+        if not (repo_dir / ".git").is_dir():
             continue
 
         tag = f"v{new_version}"
-        req_file = os.path.join(repo_dir, "requirements.txt")
+        req_file = repo_dir / "requirements.txt"
 
-        if os.path.exists(req_file):
+        if req_file.exists():
             click.echo(f"  ⏳ {repo_name}: waiting for dependencies...")
-            wait_for_requirements(req_file)
+            wait_for_requirements(str(req_file))
 
         subprocess.run(["git", "tag", tag], cwd=repo_dir, check=True)
         subprocess.run(["git", "push", "origin", tag], cwd=repo_dir, check=True)

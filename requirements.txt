@@ -1,9 +1,2 @@
-click
-bump-my-version==1.2.0
-pytest
-ruff
-mypy
-packaging
-build
-setuptools
-wheel
+click>=8.0
+packaging>=23.0

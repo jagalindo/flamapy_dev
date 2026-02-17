@@ -6,7 +6,10 @@ def parse_requirements(filename: str) -> list[str]:
     """Parse a requirements file into a list of requirements."""
     req_path = Path(__file__).resolve().parent / filename
     with req_path.open("r", encoding="utf-8") as f:
-        return [line.strip() for line in f if line.strip() and not line.startswith("#")]
+        return [
+            line.strip() for line in f
+            if line.strip() and not line.startswith("#") and not line.startswith("-r")
+        ]
 
 
 setup(
@@ -23,6 +26,6 @@ setup(
             "flamapy-dev = flamapy_dev:cli",
         ],
     },
-    python_requires=">=3.6",
+    python_requires=">=3.9",
     py_modules=["flamapy_dev"],  # Treat flamapy_dev.py as a standalone script
 )
