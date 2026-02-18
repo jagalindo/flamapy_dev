@@ -10,6 +10,7 @@ Example usage:
     $ flamapy-dev git commit-all "feat: add new feature"
 """
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -504,6 +505,87 @@ def push_all(ctx: click.Context) -> None:
     click.echo(f"\nPushed: {len(pushed)}, Failed: {len(failed)}")
 
 
+@git.command(name="actions")
+@click.option("--limit", "-n", default=3, show_default=True, help="Number of recent runs to show per repo.")
+@click.pass_context
+def actions(ctx: click.Context, limit: int) -> None:
+    """
+    Show the latest GitHub Actions run results for all repositories.
+
+    Uses the GitHub CLI (gh) to fetch recent workflow run statuses.
+    Requires 'gh' to be installed and authenticated ('gh auth login').
+
+    \b
+    Example:
+        $ flamapy-dev git actions
+        $ flamapy-dev git actions --limit 5
+    """
+    repos = ctx.obj["REPOS"]
+
+    if not shutil.which("gh"):
+        click.echo("Error: 'gh' CLI not found. Install it from https://cli.github.com/")
+        return
+
+    click.echo("\n" + "=" * 60)
+    click.echo("GITHUB ACTIONS - LATEST RUNS")
+    click.echo("=" * 60)
+
+    STATUS_ICON: dict[str, str] = {
+        "success": "✓",
+        "failure": "✗",
+        "cancelled": "⊘",
+        "skipped": "—",
+    }
+
+    for repo_name, repo_url in repos.items():
+        repo_path = repo_url.replace("https://github.com/", "").replace(".git", "")
+        click.echo(f"\n{repo_name}  ({repo_path})")
+
+        result = subprocess.run(
+            [
+                "gh", "run", "list",
+                "--repo", repo_path,
+                "--limit", str(limit),
+                "--json", "status,conclusion,name,createdAt,headBranch",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        if result.returncode != 0:
+            click.echo(f"  Error: {result.stderr.strip() or 'gh CLI failed (not authenticated?)'}")
+            continue
+
+        try:
+            runs = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            click.echo("  Could not parse gh output.")
+            continue
+
+        if not runs:
+            click.echo("  No recent runs found.")
+            continue
+
+        for run in runs:
+            status = run.get("status", "unknown")
+            conclusion = run.get("conclusion") or status
+            name = run.get("name", "unknown")
+            branch = run.get("headBranch", "")
+            created_at = run.get("createdAt", "")[:16].replace("T", " ")
+
+            if status == "in_progress":
+                icon = "⟳"
+                label = "running"
+            else:
+                icon = STATUS_ICON.get(conclusion, "?")
+                label = conclusion
+
+            click.echo(f"  {icon} [{label:<10}] {name:<30} {branch:<15} {created_at}")
+
+    click.echo("")
+
+
 git.add_command(clone)
 git.add_command(switch_develop)
 git.add_command(switch_main)
@@ -516,3 +598,4 @@ git.add_command(branch)
 git.add_command(diff)
 git.add_command(commit_all)
 git.add_command(push_all)
+git.add_command(actions)

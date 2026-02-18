@@ -17,15 +17,15 @@ from pathlib import Path
 
 import click
 
-from commands.pypi import wait_for_requirements
+from commands.pypi import get_internal_requirements, wait_for_internal_requirements
 
 
-def extract_current_version(setup_path: Path) -> str:
+def extract_current_version(pyproject_path: Path) -> str:
     """
-    Extract the version string from a setup.py file.
+    Extract the version string from a pyproject.toml file.
 
     Args:
-        setup_path: Path to the setup.py file.
+        pyproject_path: Path to the pyproject.toml file.
 
     Returns:
         The version string (e.g., "2.1.0.dev1").
@@ -35,23 +35,23 @@ def extract_current_version(setup_path: Path) -> str:
 
     Example:
         >>> from pathlib import Path
-        >>> version = extract_current_version(Path("flamapy_fw/setup.py"))
+        >>> version = extract_current_version(Path("flamapy_fw/pyproject.toml"))
         >>> print(version)
         '2.1.0.dev1'
     """
-    text = setup_path.read_text(encoding="utf-8")
+    text = pyproject_path.read_text(encoding="utf-8")
     m = re.search(r"version\s*=\s*['\"]([^'\"]+)['\"]", text)
     if not m:
-        raise ValueError(f"No version found in {setup_path}")
+        raise ValueError(f"No version found in {pyproject_path}")
     return m.group(1)
 
 
-def extract_package_name(setup_path: Path) -> str:
+def extract_package_name(pyproject_path: Path) -> str:
     """
-    Extract the package name from a setup.py file.
+    Extract the package name from a pyproject.toml file.
 
     Args:
-        setup_path: Path to the setup.py file.
+        pyproject_path: Path to the pyproject.toml file.
 
     Returns:
         The package name (e.g., "flamapy-fw").
@@ -61,54 +61,51 @@ def extract_package_name(setup_path: Path) -> str:
 
     Example:
         >>> from pathlib import Path
-        >>> name = extract_package_name(Path("flamapy_fw/setup.py"))
+        >>> name = extract_package_name(Path("flamapy_fw/pyproject.toml"))
         >>> print(name)
         'flamapy-fw'
     """
-    text = setup_path.read_text(encoding="utf-8")
+    text = pyproject_path.read_text(encoding="utf-8")
     m = re.search(r"name\s*=\s*['\"]([^'\"]+)['\"]", text)
     if not m:
-        raise ValueError(f"No name found in {setup_path}")
+        raise ValueError(f"No name found in {pyproject_path}")
     return m.group(1)
 
 
-def parse_requirements(req_path: Path) -> dict[str, str]:
+def parse_toml_dependencies(pyproject_path: Path) -> dict[str, str]:
     """
-    Parse a requirements.txt file and extract package versions.
+    Parse versioned dependencies from a pyproject.toml file.
+
+    Extracts package names and version specifiers from the
+    [project] dependencies array.
 
     Args:
-        req_path: Path to the requirements.txt file.
+        pyproject_path: Path to the pyproject.toml file.
 
     Returns:
-        Dictionary mapping package names to version specifiers.
+        Dictionary mapping package names to version strings.
 
     Example:
         >>> from pathlib import Path
-        >>> deps = parse_requirements(Path("fm_metamodel/requirements.txt"))
+        >>> deps = parse_toml_dependencies(Path("fm_metamodel/pyproject.toml"))
         >>> print(deps)
-        {'flamapy-fw': '2.1.0.dev1', 'uvlparser': '2.0.1'}
+        {'flamapy-fw': '2.1.0.dev1', 'uvlparser': '2.0.1.dev61'}
     """
     deps: dict[str, str] = {}
-    if not req_path.exists():
+    if not pyproject_path.exists():
         return deps
-    text = req_path.read_text(encoding="utf-8")
-    for raw_line in text.splitlines():
-        stripped = raw_line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        # Match patterns like: flamapy-fw~=2.1.0.dev1 or flamapy-fw>=2.0.0
-        m = re.match(r"([a-zA-Z0-9_-]+)([~>=<]+)(.+)", stripped)
-        if m:
-            deps[m.group(1)] = m.group(3)
+    text = pyproject_path.read_text(encoding="utf-8")
+    for m in re.finditer(r'"([a-zA-Z0-9_-]+)[~>=<]+([^"]+)"', text):
+        deps[m.group(1)] = m.group(2)
     return deps
 
 
-def update_setup_py(setup_path: Path, old_version: str, new_version: str) -> bool:
+def update_pyproject(pyproject_path: Path, old_version: str, new_version: str) -> bool:
     """
-    Update the version string in a setup.py file.
+    Update the [project] version string in a pyproject.toml file.
 
     Args:
-        setup_path: Path to the setup.py file.
+        pyproject_path: Path to the pyproject.toml file.
         old_version: The current version to replace.
         new_version: The new version to set.
 
@@ -117,30 +114,34 @@ def update_setup_py(setup_path: Path, old_version: str, new_version: str) -> boo
 
     Example:
         >>> from pathlib import Path
-        >>> updated = update_setup_py(
-        ...     Path("flamapy_fw/setup.py"),
+        >>> updated = update_pyproject(
+        ...     Path("flamapy_fw/pyproject.toml"),
         ...     "2.1.0.dev1",
         ...     "2.2.0"
         ... )
         >>> print(updated)
         True
     """
-    text = setup_path.read_text(encoding="utf-8")
+    text = pyproject_path.read_text(encoding="utf-8")
     pattern = r"(version\s*=\s*['\"])" + re.escape(old_version) + r"(['\"])"
     repl = r"\g<1>" + new_version + r"\g<2>"
     new_text, n = re.subn(pattern, repl, text)
     if n == 0:
         return False
-    setup_path.write_text(new_text, encoding="utf-8")
+    pyproject_path.write_text(new_text, encoding="utf-8")
     return True
 
 
-def update_requirements(req_path: Path, pkg_map: dict[str, tuple[str, str]]) -> list[str]:
+def update_toml_dependencies(
+    pyproject_path: Path, pkg_map: dict[str, tuple[str, str]]
+) -> list[str]:
     """
-    Update internal dependency versions in a requirements.txt file.
+    Update internal dependency versions in a pyproject.toml file.
+
+    Updates version specifiers inside the [project] dependencies array.
 
     Args:
-        req_path: Path to the requirements.txt file.
+        pyproject_path: Path to the pyproject.toml file.
         pkg_map: Dictionary mapping package names to (old_version, new_version) tuples.
 
     Returns:
@@ -149,26 +150,26 @@ def update_requirements(req_path: Path, pkg_map: dict[str, tuple[str, str]]) -> 
     Example:
         >>> from pathlib import Path
         >>> pkg_map = {"flamapy-fw": ("2.1.0", "2.2.0")}
-        >>> updated = update_requirements(
-        ...     Path("fm_metamodel/requirements.txt"),
+        >>> updated = update_toml_dependencies(
+        ...     Path("fm_metamodel/pyproject.toml"),
         ...     pkg_map
         ... )
         >>> print(updated)
         ['flamapy-fw']
     """
-    if not req_path.exists():
+    if not pyproject_path.exists():
         return []
-    text = req_path.read_text(encoding="utf-8")
+    text = pyproject_path.read_text(encoding="utf-8")
     updated = []
     for pkg, (_, newv) in pkg_map.items():
-        pattern = rf"({re.escape(pkg)}~=)[^\s]+"
+        pattern = rf'({re.escape(pkg)}~=)[^",]+'
         repl = rf"\g<1>{newv}"
         new_text, n = re.subn(pattern, repl, text)
         if n > 0:
             text = new_text
             updated.append(pkg)
     if updated:
-        req_path.write_text(text, encoding="utf-8")
+        pyproject_path.write_text(text, encoding="utf-8")
     return updated
 
 
@@ -224,12 +225,12 @@ def show(ctx: click.Context) -> None:
     pkg_versions = {}
     for folder in repos:
         repo = Path(parent_dir) / folder
-        setup_py = repo / "setup.py"
-        if not setup_py.exists():
+        pyproject = repo / "pyproject.toml"
+        if not pyproject.exists():
             continue
         try:
-            pkg_name = extract_package_name(setup_py)
-            pkg_version = extract_current_version(setup_py)
+            pkg_name = extract_package_name(pyproject)
+            pkg_version = extract_current_version(pyproject)
             pkg_versions[pkg_name] = pkg_version
         except (ValueError, OSError):
             continue
@@ -241,28 +242,26 @@ def show(ctx: click.Context) -> None:
 
     for folder in repos:
         repo = Path(parent_dir) / folder
-        setup_py = repo / "setup.py"
-        req_file = repo / "requirements.txt"
+        pyproject = repo / "pyproject.toml"
 
-        if not setup_py.exists():
-            click.echo(f"\n{folder}: setup.py not found")
+        if not pyproject.exists():
+            click.echo(f"\n{folder}: pyproject.toml not found")
             continue
 
         try:
-            pkg_name = extract_package_name(setup_py)
-            pkg_version = extract_current_version(setup_py)
+            pkg_name = extract_package_name(pyproject)
+            pkg_version = extract_current_version(pyproject)
             click.echo(f"\n{folder}/")
             click.echo(f"  Package: {pkg_name} v{pkg_version}")
 
-            if req_file.exists():
-                deps = parse_requirements(req_file)
-                internal_deps = {k: v for k, v in deps.items() if k in pkg_versions}
-                if internal_deps:
-                    click.echo("  Internal dependencies:")
-                    for dep, ver in internal_deps.items():
-                        actual = pkg_versions.get(dep, "?")
-                        status = "✓" if ver == actual else f"✗ (actual: {actual})"
-                        click.echo(f"    - {dep}~={ver} {status}")
+            deps = parse_toml_dependencies(pyproject)
+            internal_deps = {k: v for k, v in deps.items() if k in pkg_versions}
+            if internal_deps:
+                click.echo("  Internal dependencies:")
+                for dep, ver in internal_deps.items():
+                    actual = pkg_versions.get(dep, "?")
+                    status = "✓" if ver == actual else f"✗ (actual: {actual})"
+                    click.echo(f"    - {dep}~={ver} {status}")
         except (ValueError, OSError) as e:
             click.echo(f"\n{folder}: Error - {e}")
 
@@ -274,12 +273,12 @@ def _collect_versions(parent_dir: str, repos: dict[str, str]) -> dict[str, tuple
     pkg_versions = {}
     for folder in repos:
         repo = Path(parent_dir) / folder
-        setup_py = repo / "setup.py"
-        if not setup_py.exists():
+        pyproject = repo / "pyproject.toml"
+        if not pyproject.exists():
             continue
         try:
-            pkg_name = extract_package_name(setup_py)
-            pkg_version = extract_current_version(setup_py)
+            pkg_name = extract_package_name(pyproject)
+            pkg_version = extract_current_version(pyproject)
             pkg_versions[pkg_name] = (folder, pkg_version)
         except (ValueError, OSError):
             continue
@@ -291,20 +290,20 @@ def _find_version_errors(
     repos: dict[str, str],
     pkg_versions: dict[str, tuple[str, str]],
 ) -> list[str]:
-    """Find version mismatches in requirements files."""
+    """Find version mismatches in pyproject.toml dependency declarations."""
     errors = []
     for folder in repos:
         repo = Path(parent_dir) / folder
-        req_file = repo / "requirements.txt"
-        if not req_file.exists():
+        pyproject = repo / "pyproject.toml"
+        if not pyproject.exists():
             continue
-        deps = parse_requirements(req_file)
+        deps = parse_toml_dependencies(pyproject)
         for dep, required_ver in deps.items():
             if dep in pkg_versions:
                 _, actual_ver = pkg_versions[dep]
                 if required_ver != actual_ver:
                     errors.append(
-                        f"{folder}/requirements.txt: {dep}~={required_ver} "
+                        f"{folder}/pyproject.toml: {dep}~={required_ver} "
                         f"but {dep} is at v{actual_ver}"
                     )
     return errors
@@ -316,8 +315,8 @@ def check(ctx: click.Context) -> None:
     """
     Check if all internal dependencies have matching versions.
 
-    Validates that the versions specified in requirements.txt files
-    match the actual versions in the corresponding setup.py files.
+    Validates that the versions specified in pyproject.toml dependencies
+    match the actual versions in the corresponding packages.
     Exits with code 1 if mismatches are found.
 
     \b
@@ -352,13 +351,13 @@ def _gather_repo_info(
     repo_info: dict[str, tuple[Path, str, str, str]] = {}
     for folder in repos:
         repo = Path(parent_dir) / folder
-        setup_py = repo / "setup.py"
-        if not setup_py.exists():
-            click.echo(f"{folder}: setup.py not found, skipping.")
+        pyproject = repo / "pyproject.toml"
+        if not pyproject.exists():
+            click.echo(f"{folder}: pyproject.toml not found, skipping.")
             continue
         try:
-            oldv = extract_current_version(setup_py)
-            pkg_name = extract_package_name(setup_py)
+            oldv = extract_current_version(pyproject)
+            pkg_name = extract_package_name(pyproject)
             pkg_map[pkg_name] = (oldv, new_version)
             repo_info[folder] = (repo, pkg_name, oldv, new_version)
         except (ValueError, OSError) as e:
@@ -373,20 +372,19 @@ def _apply_bump(
 ) -> None:
     """Apply version bumps to all repos."""
     for folder, (repo, _, oldv, newv) in repo_info.items():
+        pyproject = repo / "pyproject.toml"
         click.echo(f"{folder}/")
-        click.echo(f"  setup.py: {oldv} → {newv}")
+        click.echo(f"  pyproject.toml version: {oldv} → {newv}")
 
-        req = repo / "requirements.txt"
-        if req.exists():
-            deps = parse_requirements(req)
-            internal_deps = [dep for dep in deps if dep in pkg_map]
-            if internal_deps:
-                click.echo(f"  requirements.txt: {', '.join(internal_deps)} → {newv}")
+        deps = parse_toml_dependencies(pyproject)
+        internal_deps = [dep for dep in deps if dep in pkg_map]
+        if internal_deps:
+            click.echo(f"  pyproject.toml deps: {', '.join(internal_deps)} → {newv}")
 
         if not dry_run:
-            update_setup_py(repo / "setup.py", oldv, newv)
-            if req.exists():
-                update_requirements(req, pkg_map)
+            update_pyproject(pyproject, oldv, newv)
+            if internal_deps:
+                update_toml_dependencies(pyproject, pkg_map)
 
 
 @version.command()
@@ -475,10 +473,21 @@ def _push_all(parent_dir: str, repos: dict[str, str]) -> None:
                 click.echo(f"  ✗ {repo_name}: {result.stderr.strip()}")
 
 
-def _tag_all(parent_dir: str, repos: dict[str, str], new_version: str) -> None:
-    """Create and push tags for all repos."""
+def _tag_all(
+    parent_dir: str,
+    repos: dict[str, str],
+    new_version: str,
+    internal_packages: set[str],
+) -> None:
+    """Create and push tags for all repos.
+
+    Before tagging each repo, waits until its internal flamapy dependencies are
+    available on PyPI.  External dependencies (setuptools, uvlparser, …) and
+    build-system requirements are intentionally ignored — only the packages that
+    are part of this coordinated release matter, because those are the ones whose
+    PyPI releases are triggered by the tag push itself.
+    """
     click.echo("\n📋 Step 5: Creating and pushing tags...")
-    click.echo("  (Waiting for PyPI availability between repos...)")
 
     for repo_name in repos:
         repo_dir = Path(parent_dir) / repo_name
@@ -486,15 +495,31 @@ def _tag_all(parent_dir: str, repos: dict[str, str], new_version: str) -> None:
             continue
 
         tag = f"v{new_version}"
-        req_file = repo_dir / "requirements.txt"
+        pyproject = repo_dir / "pyproject.toml"
 
-        if req_file.exists():
-            click.echo(f"  ⏳ {repo_name}: waiting for dependencies...")
-            wait_for_requirements(str(req_file))
+        if pyproject.exists():
+            pending = get_internal_requirements(str(pyproject), internal_packages)
+            if pending:
+                pending_str = ", ".join(str(r) for r in pending)
+                click.echo(f"  ⏳ {repo_name}: waiting for {pending_str} on PyPI...")
+                wait_for_internal_requirements(str(pyproject), internal_packages)
 
-        subprocess.run(["git", "tag", tag], cwd=repo_dir, check=True)
-        subprocess.run(["git", "push", "origin", tag], cwd=repo_dir, check=True)
-        click.echo(f"  ✓ {repo_name}: tagged {tag}")
+        existing = subprocess.run(
+            ["git", "tag", "-l", tag], cwd=repo_dir, capture_output=True, text=True, check=False
+        )
+        if existing.stdout.strip():
+            click.echo(f"  ⚠ {repo_name}: tag {tag} already exists, skipping create")
+        else:
+            subprocess.run(["git", "tag", tag], cwd=repo_dir, check=True)
+
+        push = subprocess.run(
+            ["git", "push", "origin", tag],
+            cwd=repo_dir, capture_output=True, text=True, check=False
+        )
+        if push.returncode != 0:
+            click.echo(f"  ⚠ {repo_name}: tag {tag} already pushed, skipping")
+        else:
+            click.echo(f"  ✓ {repo_name}: tagged {tag}")
 
 
 @version.command()
@@ -542,6 +567,7 @@ def release(ctx: click.Context, new_version: str, dry_run: bool, skip_tests: boo
 
     # Step 2: Bump versions
     click.echo("\n📋 Step 2: Bumping versions...")
+    pkg_map, _ = _gather_repo_info(parent_dir, repos, new_version)
     ctx.invoke(bump, new_version=new_version, dry_run=dry_run)
 
     if dry_run:
@@ -550,9 +576,10 @@ def release(ctx: click.Context, new_version: str, dry_run: bool, skip_tests: boo
         return
 
     # Steps 3-5: Commit, push, and tag
+    internal_packages = set(pkg_map.keys())
     _commit_all(parent_dir, repos, f"chore: bump version to {new_version}")
     _push_all(parent_dir, repos)
-    _tag_all(parent_dir, repos, new_version)
+    _tag_all(parent_dir, repos, new_version, internal_packages)
 
     click.echo(f"\n{'='*60}")
     click.echo(f"✓ Release v{new_version} completed!")

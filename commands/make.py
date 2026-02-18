@@ -24,13 +24,14 @@ def make(ctx: click.Context) -> None:
     Run make targets on all repositories.
 
     This command group provides tools for executing make targets
-    (lint, test, mypy) across all flamapy repositories.
+    (lint, test, mypy, cov) across all flamapy repositories.
 
     \b
     Examples:
         $ flamapy-dev make lint           # Run linting
         $ flamapy-dev make test           # Run tests
         $ flamapy-dev make mypy           # Run type checking
+        $ flamapy-dev make cov            # Run coverage
         $ flamapy-dev make all            # Run all checks
         $ flamapy-dev make all -c         # Continue on errors
     """
@@ -42,8 +43,8 @@ def make(ctx: click.Context) -> None:
 def _run_make(
     ctx: click.Context,
     target: str,
-    continue_on_error: bool = False
-) -> tuple[list[str], list[str]]:
+    continue_on_error: bool = False,
+) -> tuple[list[str], list[str], list[str]]:
     """
     Run a make target on all repositories.
 
@@ -53,16 +54,17 @@ def _run_make(
         continue_on_error: If True, continue running even if a repo fails.
 
     Returns:
-        Tuple of (succeeded, failed) repository name lists.
+        Tuple of (succeeded, failed, not_found) repository name lists.
 
     Example:
-        >>> succeeded, failed = _run_make(ctx, "test", continue_on_error=True)
-        >>> print(f"Passed: {len(succeeded)}, Failed: {len(failed)}")
+        >>> succeeded, failed, not_found = _run_make(ctx, "test", continue_on_error=True)
+        >>> print(f"Passed: {len(succeeded)}, Failed: {len(failed)}, Missing: {len(not_found)}")
     """
     parent_dir = Path(ctx.obj["PARENT_DIR"])
     repos = ctx.obj["REPOS"]
     succeeded: list[str] = []
     failed: list[str] = []
+    not_found: list[str] = []
 
     for repo_name in repos:
         repo_dir = parent_dir / repo_name
@@ -83,12 +85,18 @@ def _run_make(
                     click.echo(f"\n✗ Failed in {repo_name}. Use --continue-on-error to continue.")
                     break
         else:
-            click.echo(f"{repo_dir} does not exist.")
+            click.echo(f"{repo_dir.resolve()} does not exist.")
+            not_found.append(repo_name)
 
-    return succeeded, failed
+    return succeeded, failed, not_found
 
 
-def _print_summary(target: str, succeeded: list[str], failed: list[str]) -> None:
+def _print_summary(
+    target: str,
+    succeeded: list[str],
+    failed: list[str],
+    not_found: list[str],
+) -> None:
     """
     Print a summary of make execution results.
 
@@ -96,24 +104,30 @@ def _print_summary(target: str, succeeded: list[str], failed: list[str]) -> None
         target: The make target that was run.
         succeeded: List of repository names that passed.
         failed: List of repository names that failed.
+        not_found: List of repository names whose directories were not found.
 
     Example:
-        >>> _print_summary("test", ["flamapy_fw", "fm_metamodel"], ["pysat_metamodel"])
+        >>> _print_summary("test", ["flamapy_fw"], ["pysat_metamodel"], ["bdd_metamodel"])
         ==================================================
         SUMMARY: make test
         ==================================================
-        Passed: 2
+        Passed: 1
         Failed: 1
           ✗ pysat_metamodel
+        Skipped (not found): 1
+          ? bdd_metamodel
     """
     click.echo(f"\n{'='*50}")
     click.echo(f"SUMMARY: make {target}")
     click.echo('='*50)
-    click.echo(f"Passed: {len(succeeded)}")
-    click.echo(f"Failed: {len(failed)}")
+    click.echo(f"Passed:  {len(succeeded)}")
+    click.echo(f"Failed:  {len(failed)}")
     if failed:
         for repo in failed:
             click.echo(f"  ✗ {repo}")
+    if not_found:
+        click.echo(f"Skipped (not found): {len(not_found)}")
+        click.echo("  → Run 'flamapy-dev git clone' to clone missing repos.")
 
 
 @make.command()
@@ -141,11 +155,11 @@ def lint(ctx: click.Context, continue_on_error: bool) -> None:
         ==================================================
         SUMMARY: make lint
         ==================================================
-        Passed: 6
-        Failed: 0
+        Passed:  6
+        Failed:  0
     """
-    succeeded, failed = _run_make(ctx, "lint", continue_on_error)
-    _print_summary("lint", succeeded, failed)
+    succeeded, failed, not_found = _run_make(ctx, "lint", continue_on_error)
+    _print_summary("lint", succeeded, failed, not_found)
 
 
 @make.command(name="test")
@@ -172,11 +186,11 @@ def test_cmd(ctx: click.Context, continue_on_error: bool) -> None:
         ==================================================
         SUMMARY: make test
         ==================================================
-        Passed: 6
-        Failed: 0
+        Passed:  6
+        Failed:  0
     """
-    succeeded, failed = _run_make(ctx, "test", continue_on_error)
-    _print_summary("test", succeeded, failed)
+    succeeded, failed, not_found = _run_make(ctx, "test", continue_on_error)
+    _print_summary("test", succeeded, failed, not_found)
 
 
 @make.command()
@@ -203,11 +217,47 @@ def mypy(ctx: click.Context, continue_on_error: bool) -> None:
         ==================================================
         SUMMARY: make mypy
         ==================================================
-        Passed: 6
-        Failed: 0
+        Passed:  6
+        Failed:  0
     """
-    succeeded, failed = _run_make(ctx, "mypy", continue_on_error)
-    _print_summary("mypy", succeeded, failed)
+    succeeded, failed, not_found = _run_make(ctx, "mypy", continue_on_error)
+    _print_summary("mypy", succeeded, failed, not_found)
+
+
+@make.command()
+@click.option("--continue-on-error", "-c", is_flag=True, help="Continue even if a repo fails")
+@click.pass_context
+def cov(ctx: click.Context, continue_on_error: bool) -> None:
+    """
+    Execute 'make cov' in all repositories.
+
+    Runs coverage analysis (coverage run + coverage report) in each
+    repository that supports it. Repos without a 'cov' target are
+    skipped automatically by make.
+
+    \b
+    Options:
+        --continue-on-error, -c: Don't stop on first failure
+
+    \b
+    Example:
+        $ flamapy-dev make cov
+        ==================================================
+        Running 'make cov' in flamapy_fw
+        ==================================================
+        Name                    Stmts   Miss  Cover
+        ----------------------------------------
+        flamapy/__init__.py         5      0   100%
+        ...
+
+        ==================================================
+        SUMMARY: make cov
+        ==================================================
+        Passed:  5
+        Failed:  0
+    """
+    succeeded, failed, not_found = _run_make(ctx, "cov", continue_on_error)
+    _print_summary("cov", succeeded, failed, not_found)
 
 
 @make.command(name="all")
@@ -248,16 +298,22 @@ def all_targets(ctx: click.Context, continue_on_error: bool) -> None:
         Total passed: 18
         Total failed: 0
     """
-    all_succeeded = []
-    all_failed = []
+    all_succeeded: list[tuple[str, str]] = []
+    all_failed: list[tuple[str, str]] = []
+    all_not_found: list[str] = []
 
     for target in ["lint", "mypy", "test"]:
         click.echo(f"\n{'#'*60}")
         click.echo(f"# RUNNING: make {target}")
         click.echo('#'*60)
-        succeeded, failed = _run_make(ctx, target, continue_on_error)
+        succeeded, failed, not_found = _run_make(ctx, target, continue_on_error)
         all_succeeded.extend([(repo, target) for repo in succeeded])
         all_failed.extend([(repo, target) for repo in failed])
+
+        # Deduplicate: not_found is the same set of repos across all targets
+        for repo in not_found:
+            if repo not in all_not_found:
+                all_not_found.append(repo)
 
         if failed and not continue_on_error:
             break
@@ -267,7 +323,15 @@ def all_targets(ctx: click.Context, continue_on_error: bool) -> None:
     click.echo('='*60)
     click.echo(f"Total passed: {len(all_succeeded)}")
     click.echo(f"Total failed: {len(all_failed)}")
+    if all_not_found:
+        click.echo(f"Total skipped (not found): {len(all_not_found)}")
+
     if all_failed:
         click.echo("\nFailed:")
         for repo, target in all_failed:
             click.echo(f"  ✗ {repo} ({target})")
+
+    if all_not_found:
+        click.echo("\nNot found — run 'flamapy-dev git clone' to clone missing repos:")
+        for repo in all_not_found:
+            click.echo(f"  ? {repo}")
