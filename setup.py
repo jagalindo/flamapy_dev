@@ -14,7 +14,7 @@ def parse_requirements(filename: str) -> list[str]:
 
 setup(
     name="flamapy-dev",
-    version="0.0.2",
+    version="0.5.0",
     description="CLI tool for managing Git repositories and Python " \
     "packages for the Flamapy distribution",
     author="José A. Galindo",

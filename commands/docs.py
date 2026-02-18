@@ -38,7 +38,7 @@ def _get_cli() -> click.Group:
     return cli
 
 
-def _get_command_help(cli: click.Group, ctx: click.Context, prefix: str = "") -> str:
+def _get_command_help(cli: click.Command, ctx: click.Context, prefix: str = "") -> str:
     """
     Recursively get help text for a command and its subcommands.
 

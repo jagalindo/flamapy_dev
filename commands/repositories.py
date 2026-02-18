@@ -506,7 +506,8 @@ def push_all(ctx: click.Context) -> None:
 
 
 @git.command(name="actions")
-@click.option("--limit", "-n", default=3, show_default=True, help="Number of recent runs to show per repo.")
+@click.option("--limit", "-n", default=3, show_default=True,
+              help="Number of recent runs to show per repo.")
 @click.pass_context
 def actions(ctx: click.Context, limit: int) -> None:
     """

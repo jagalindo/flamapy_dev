@@ -140,7 +140,8 @@ def wait_for_pyproject_requirements(pyproject_file: str, check_interval: int = 1
         time.sleep(check_interval)
 
 
-def get_internal_requirements(pyproject_file: str, internal_packages: set[str]) -> list[Requirement]:
+def get_internal_requirements(
+        pyproject_file: str, internal_packages: set[str]) -> list[Requirement]:
     """
     Return versioned requirements from a pyproject.toml that belong to internal_packages.
 
@@ -159,7 +160,8 @@ def get_internal_requirements(pyproject_file: str, internal_packages: set[str]) 
         return name.lower().replace("_", "-")
 
     normalized = {_normalize(p) for p in internal_packages}
-    return [r for r in _parse_pyproject_requirements(pyproject_file) if _normalize(r.name) in normalized]
+    return [r for r in _parse_pyproject_requirements(pyproject_file)
+            if _normalize(r.name) in normalized]
 
 
 def wait_for_internal_requirements(
