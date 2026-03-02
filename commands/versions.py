@@ -217,6 +217,8 @@ def show(ctx: click.Context) -> None:
           Package: flamapy-fm v2.1.0.dev1
           Internal dependencies:
             - flamapy-fw~=2.1.0.dev1 ✓
+          External dependencies:
+            - uvlparser~=2.5.0.dev63
     """
     parent_dir = ctx.obj["PARENT_DIR"]
     repos = ctx.obj["REPOS"]
@@ -256,12 +258,17 @@ def show(ctx: click.Context) -> None:
 
             deps = parse_toml_dependencies(pyproject)
             internal_deps = {k: v for k, v in deps.items() if k in pkg_versions}
+            external_deps = {k: v for k, v in deps.items() if k not in pkg_versions}
             if internal_deps:
                 click.echo("  Internal dependencies:")
                 for dep, ver in internal_deps.items():
                     actual = pkg_versions.get(dep, "?")
                     status = "✓" if ver == actual else f"✗ (actual: {actual})"
                     click.echo(f"    - {dep}~={ver} {status}")
+            if external_deps:
+                click.echo("  External dependencies:")
+                for dep, ver in external_deps.items():
+                    click.echo(f"    - {dep}~={ver}")
         except (ValueError, OSError) as e:
             click.echo(f"\n{folder}: Error - {e}")
 
