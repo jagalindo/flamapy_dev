@@ -24,12 +24,15 @@ from collections import OrderedDict
 # Order matters: dependencies must come before dependents.
 REPOS = OrderedDict(
     [
-        ("flamapy_fw", "https://github.com/flamapy/flamapy_fw.git"),
-        ("fm_metamodel", "https://github.com/flamapy/fm_metamodel.git"),
-        ("pysat_metamodel", "https://github.com/flamapy/pysat_metamodel.git"),
-        ("bdd_metamodel", "https://github.com/flamapy/bdd_metamodel.git"),
-        ("z3_metamodel", "https://github.com/flamapy/z3_metamodel.git"),
-        ("flamapy", "https://github.com/flamapy/flamapy.git"),
+        ("flamapy_fw", "git@github.com:flamapy/flamapy_fw.git"),
+        ("fm_metamodel", "git@github.com:flamapy/fm_metamodel.git"),
+        ("pysat_metamodel", "git@github.com:flamapy/pysat_metamodel.git"),
+        ("bdd_metamodel", "git@github.com:flamapy/bdd_metamodel.git"),
+        ("z3_metamodel", "git@github.com:flamapy/z3_metamodel.git"),
+        ("flamapy", "git@github.com:flamapy/flamapy.git"),
+        ("flamapy-ide", "git@github.com:flamapy/flamapy-ide.git"),
+        ("flamapy_docs", "git@github.com:flamapy/flamapy_docs.git"),
+
     ]
 )
 
