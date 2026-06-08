@@ -493,6 +493,10 @@ def _tag_all(
     build-system requirements are intentionally ignored — only the packages that
     are part of this coordinated release matter, because those are the ones whose
     PyPI releases are triggered by the tag push itself.
+
+    Availability is checked against PyPI's *simple index* — the same index that
+    pip (and therefore CI) resolves against — rather than the JSON API, which can
+    report a version as available before it has propagated to the simple index.
     """
     click.echo("\n📋 Step 5: Creating and pushing tags...")
 
@@ -508,7 +512,8 @@ def _tag_all(
             pending = get_internal_requirements(str(pyproject), internal_packages)
             if pending:
                 pending_str = ", ".join(str(r) for r in pending)
-                click.echo(f"  ⏳ {repo_name}: waiting for {pending_str} on PyPI...")
+                click.echo(f"  ⏳ {repo_name}: waiting for {pending_str} "
+                           f"on the PyPI simple index...")
                 wait_for_internal_requirements(str(pyproject), internal_packages)
 
         existing = subprocess.run(
@@ -543,7 +548,7 @@ def release(ctx: click.Context, new_version: str, dry_run: bool, skip_tests: boo
     2. Bump all package versions
     3. Commit changes in all repos
     4. Push commits to remote
-    5. Create and push tags (waits for PyPI availability)
+    5. Create and push tags (waits for deps on the PyPI simple index)
 
     \b
     Args:

@@ -26,6 +26,6 @@ setup(
             "flamapy-dev = flamapy_dev:cli",
         ],
     },
-    python_requires=">=3.9",
+    python_requires=">=3.11",
     py_modules=["flamapy_dev"],  # Treat flamapy_dev.py as a standalone script
 )

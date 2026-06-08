@@ -40,7 +40,7 @@ flamapy-dev version show
 
 ## Installation
 
-**Requirements:** Python >= 3.9
+**Requirements:** Python >= 3.11
 
 ### From PyPI
 

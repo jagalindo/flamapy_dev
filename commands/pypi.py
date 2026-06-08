@@ -70,28 +70,77 @@ def _parse_pyproject_requirements(pyproject_file: str) -> list[Requirement]:
     return requirements
 
 
+def _normalize_project_name(name: str) -> str:
+    """Normalise a project name for use in a simple-index URL (PEP 503)."""
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def _available_versions(req: Requirement) -> set[str]:
+    """
+    Return the versions of a package published on PyPI's simple index.
+
+    The simple index is the same source pip (and therefore CI) resolves against,
+    so it is the authoritative answer to "can this version be installed yet?".
+    The JSON metadata API (``/pypi/<name>/json``) can report a release before it
+    has propagated to the simple index, which is the race this avoids.
+
+    Versions are read from the PEP 700 ``versions`` field when present, otherwise
+    derived from the ``files`` filenames in the PEP 691 JSON simple response.
+
+    Args:
+        req: A Requirement object specifying the package.
+
+    Returns:
+        The set of version strings available, or an empty set on any error.
+    """
+    url = f"https://pypi.org/simple/{_normalize_project_name(req.name)}/"
+    headers = {"Accept": "application/vnd.pypi.simple.v1+json"}
+    try:
+        with request.urlopen(
+            request.Request(url, headers=headers), timeout=10, context=_SSL_CONTEXT
+        ) as resp:
+            if resp.status != HTTP_OK:
+                return set()
+            data = json.load(resp)
+    except (error.URLError, json.JSONDecodeError, OSError):
+        return set()
+
+    versions = data.get("versions")
+    if versions:
+        return set(versions)
+
+    # Fall back to parsing versions out of the distribution filenames.
+    found: set[str] = set()
+    name_prefix = _normalize_project_name(req.name).replace("-", "_")
+    for file_entry in data.get("files", []):
+        filename = file_entry.get("filename", "")
+        if filename.endswith(".whl"):
+            parts = filename[:-4].split("-")
+            if len(parts) >= 2:
+                found.add(parts[1])
+        elif filename.endswith(".tar.gz"):
+            stem = filename[: -len(".tar.gz")]
+            if stem.lower().startswith(name_prefix + "-"):
+                found.add(stem[len(name_prefix) + 1:])
+    return found
+
+
 def _package_available(req: Requirement) -> bool:
     """
-    Check if a package version is available on PyPI.
+    Check if a package version is available on PyPI's simple index.
 
     Args:
         req: A Requirement object specifying the package and version constraints.
 
     Returns:
-        True if the package version is available on PyPI, False otherwise.
+        True if a matching version is available on the simple index, else False.
     """
-    url = f"https://pypi.org/pypi/{req.name}/json"
-    try:
-        with request.urlopen(url, timeout=10, context=_SSL_CONTEXT) as resp:
-            if resp.status != HTTP_OK:
-                return False
-            data = json.load(resp)
-    except (error.URLError, json.JSONDecodeError, OSError):
+    versions = _available_versions(req)
+    if not versions:
         return False
     if not req.specifier:
         return True
-    releases = data.get("releases", {})
-    for ver in releases.keys():
+    for ver in versions:
         try:
             if req.specifier.contains(ver, prereleases=True):
                 return True

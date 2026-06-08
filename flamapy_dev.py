@@ -30,8 +30,9 @@ REPOS = OrderedDict(
         ("bdd_metamodel", "git@github.com:flamapy/bdd_metamodel.git"),
         ("z3_metamodel", "git@github.com:flamapy/z3_metamodel.git"),
         ("flamapy", "git@github.com:flamapy/flamapy.git"),
-        ("flamapy-ide", "git@github.com:flamapy/flamapy-ide.git"),
-        ("flamapy_docs", "git@github.com:flamapy/flamapy_docs.git"),
+       # ("flamapy_rest", "git@github.com:flamapy/flamapy_rest.git"),
+       # ("flamapy-ide", "git@github.com:flamapy/flamapy-ide.git"),
+       # ("flamapy_docs", "git@github.com:flamapy/flamapy_docs.git"),
 
     ]
 )
