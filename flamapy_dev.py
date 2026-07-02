@@ -29,7 +29,6 @@ REPOS = OrderedDict(
         ("pysat_metamodel", "git@github.com:flamapy/pysat_metamodel.git"),
         ("bdd_metamodel", "git@github.com:flamapy/bdd_metamodel.git"),
         ("z3_metamodel", "git@github.com:flamapy/z3_metamodel.git"),
-        ("sharpsat_metamodel", "git@github.com:flamapy/sharpsat_metamodel.git"),
         ("flamapy", "git@github.com:flamapy/flamapy.git"),
        # ("flamapy_rest", "git@github.com:flamapy/flamapy_rest.git"),
        # ("flamapy-ide", "git@github.com:flamapy/flamapy-ide.git"),
