@@ -20,8 +20,11 @@ from commands import git, pip, version, make, docs
 import os
 from collections import OrderedDict
 
-# Define the repositories and their URLs.
-# Order matters: dependencies must come before dependents.
+# PyPI plugins released as a coordinated set: bump pyproject version + internal `~=` pins, then
+# tag (which triggers each repo's PyPI publish). Order matters: dependencies before dependents.
+# The new knowledge-compilation plugins (sdd, dnnf, sharpsat) depend on fw/fm/sat, so they sit
+# after pysat; flamapy pins them (sharpsat optionally), so it comes after; flamapy_rest depends
+# on flamapy, so it comes last. flamapy-gnn is intentionally excluded (private, not on PyPI).
 REPOS = OrderedDict(
     [
         ("flamapy_fw", "git@github.com:flamapy/flamapy_fw.git"),
@@ -29,13 +32,19 @@ REPOS = OrderedDict(
         ("pysat_metamodel", "git@github.com:flamapy/pysat_metamodel.git"),
         ("bdd_metamodel", "git@github.com:flamapy/bdd_metamodel.git"),
         ("z3_metamodel", "git@github.com:flamapy/z3_metamodel.git"),
+        ("sdd_metamodel", "git@github.com:flamapy/sdd_metamodel.git"),
+        ("dnnf_metamodel", "git@github.com:flamapy/dnnf_metamodel.git"),
+        ("sharpsat_metamodel", "git@github.com:flamapy/sharpsat_metamodel.git"),
         ("flamapy", "git@github.com:flamapy/flamapy.git"),
-       # ("flamapy_rest", "git@github.com:flamapy/flamapy_rest.git"),
-       # ("flamapy-ide", "git@github.com:flamapy/flamapy-ide.git"),
-       # ("flamapy_docs", "git@github.com:flamapy/flamapy_docs.git"),
-
+        ("flamapy_rest", "git@github.com:flamapy/flamapy_rest.git"),
     ]
 )
+
+# Non-PyPI artefacts, released with their own procedures (see `version release-all`):
+#   - the IDE bundles a published flamapy version and ships via a tag (docker + GitHub Pages);
+#   - the docs site has no version and publishes by merging develop → main (deploys from main).
+IDE_REPO = "flamapy-ide"
+DOCS_REPO = "flamapy_docs"
 
 # Define the default parent directory as the current directory.
 DEFAULT_PARENT_DIR = os.curdir
@@ -81,6 +90,8 @@ def cli(ctx: click.Context, parent_dir: str) -> None:
     """
     ctx.ensure_object(dict)
     ctx.obj["REPOS"] = REPOS
+    ctx.obj["IDE_REPO"] = IDE_REPO
+    ctx.obj["DOCS_REPO"] = DOCS_REPO
     ctx.obj["PARENT_DIR"] = parent_dir
 
 

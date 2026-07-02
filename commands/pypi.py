@@ -213,10 +213,29 @@ def get_internal_requirements(
             if _normalize(r.name) in normalized]
 
 
+def wait_for_package(
+    name: str, version: str, check_interval: int = 10, timeout: int = 1800
+) -> None:
+    """Block until ``name==version`` is available on PyPI's simple index.
+
+    Raises ``TimeoutError`` after ``timeout`` seconds so a release never hangs forever on a
+    package whose publish failed.
+    """
+    req = Requirement(f"{name}=={version}")
+    deadline = time.monotonic() + timeout
+    while not _package_available(req):
+        if time.monotonic() >= deadline:
+            raise TimeoutError(
+                f"{name}=={version} did not appear on PyPI within {timeout}s"
+            )
+        time.sleep(check_interval)
+
+
 def wait_for_internal_requirements(
     pyproject_file: str,
     internal_packages: set[str],
     check_interval: int = 10,
+    timeout: int = 1800,
 ) -> list[str]:
     """
     Block until all internal versioned dependencies in a pyproject.toml are on PyPI.
@@ -239,7 +258,12 @@ def wait_for_internal_requirements(
     reqs = get_internal_requirements(pyproject_file, internal_packages)
     if not reqs:
         return []
-    while True:
-        if all(_package_available(r) for r in reqs):
-            return [str(r) for r in reqs]
+    deadline = time.monotonic() + timeout
+    while not all(_package_available(r) for r in reqs):
+        if time.monotonic() >= deadline:
+            pending = [str(r) for r in reqs if not _package_available(r)]
+            raise TimeoutError(
+                f"timed out after {timeout}s waiting for {', '.join(pending)} on PyPI"
+            )
         time.sleep(check_interval)
+    return [str(r) for r in reqs]

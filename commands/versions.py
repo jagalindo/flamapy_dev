@@ -17,7 +17,11 @@ from pathlib import Path
 
 import click
 
-from commands.pypi import get_internal_requirements, wait_for_internal_requirements
+from commands.pypi import (
+    get_internal_requirements,
+    wait_for_internal_requirements,
+    wait_for_package,
+)
 
 
 def extract_current_version(pyproject_path: Path) -> str:
@@ -598,7 +602,136 @@ def release(ctx: click.Context, new_version: str, dry_run: bool, skip_tests: boo
     click.echo('='*60)
 
 
+def _release_ide(parent_dir: str, ide_repo: str, new_version: str, dry_run: bool) -> None:
+    """Release the IDE: bundle the just-published flamapy version and tag it.
+
+    The IDE downloads ``flamapy==<new_version>`` at build time, so this first waits for that
+    version on PyPI, then bumps ``flamapy.version``, commits/pushes, and tags ``v<new_version>``
+    (synced to the flamapy version) — which triggers the IDE's docker + Pages release.
+    """
+    click.echo("\n📋 IDE: bundle flamapy and tag...")
+    repo_dir = Path(parent_dir) / ide_repo
+    if not (repo_dir / ".git").is_dir():
+        click.echo(f"  ⚠ {ide_repo}: not found, skipping")
+        return
+
+    version_file = repo_dir / "flamapy.version"
+    tag = f"v{new_version}"
+    if dry_run:
+        current = version_file.read_text().strip() if version_file.exists() else "?"
+        click.echo(f"  [DRY RUN] {ide_repo}: flamapy.version {current} → {new_version}, "
+                   f"commit/push, tag {tag}")
+        return
+
+    click.echo(f"  ⏳ waiting for flamapy=={new_version} on PyPI before bundling...")
+    wait_for_package("flamapy", new_version)
+
+    version_file.write_text(f"{new_version}\n", encoding="utf-8")
+    status = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=repo_dir, capture_output=True, text=True, check=False
+    )
+    if status.stdout.strip():
+        subprocess.run(["git", "add", "flamapy.version"], cwd=repo_dir, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", f"chore: bundle flamapy {new_version}"],
+            cwd=repo_dir, check=True,
+        )
+        subprocess.run(["git", "push"], cwd=repo_dir, check=False)
+
+    existing = subprocess.run(
+        ["git", "tag", "-l", tag], cwd=repo_dir, capture_output=True, text=True, check=False
+    )
+    if existing.stdout.strip():
+        click.echo(f"  ⚠ {ide_repo}: tag {tag} already exists, skipping")
+        return
+    subprocess.run(["git", "tag", tag], cwd=repo_dir, check=True)
+    push = subprocess.run(
+        ["git", "push", "origin", tag], cwd=repo_dir, capture_output=True, text=True, check=False
+    )
+    if push.returncode == 0:
+        click.echo(f"  ✓ {ide_repo}: tagged {tag}")
+    else:
+        click.echo(f"  ⚠ {ide_repo}: {push.stderr.strip()}")
+
+
+def _release_docs(parent_dir: str, docs_repo: str, dry_run: bool) -> None:
+    """Publish the docs site by merging develop → main (the site deploys from main)."""
+    click.echo("\n📋 Docs: publish site (develop → main)...")
+    repo_dir = Path(parent_dir) / docs_repo
+    if not (repo_dir / ".git").is_dir():
+        click.echo(f"  ⚠ {docs_repo}: not found, skipping")
+        return
+    if dry_run:
+        click.echo(f"  [DRY RUN] {docs_repo}: merge develop → main and push (deploys Pages)")
+        return
+
+    steps = [
+        ["git", "checkout", "main"],
+        ["git", "merge", "--no-ff", "develop", "-m", "chore: publish docs"],
+        ["git", "push", "origin", "main"],
+        ["git", "checkout", "develop"],
+    ]
+    for step in steps:
+        result = subprocess.run(
+            step, cwd=repo_dir, capture_output=True, text=True, check=False
+        )
+        if result.returncode != 0:
+            click.echo(f"  ⚠ {docs_repo}: `{' '.join(step[1:])}` failed: {result.stderr.strip()}")
+            subprocess.run(["git", "checkout", "develop"], cwd=repo_dir, check=False)
+            return
+    click.echo(f"  ✓ {docs_repo}: published (develop → main)")
+
+
+@version.command(name="release-all")
+@click.argument("new_version")
+@click.option("--dry-run", "-n", is_flag=True, help="Simulate without making changes")
+@click.option("--skip-tests", is_flag=True, help="Skip running tests before release")
+@click.option("--skip-plugins", is_flag=True, help="Skip the coordinated PyPI plugin release")
+@click.option("--skip-ide", is_flag=True, help="Skip releasing the IDE")
+@click.option("--skip-docs", is_flag=True, help="Skip publishing the docs site")
+@click.pass_context
+def release_all(  # noqa: PLR0913
+    ctx: click.Context, new_version: str, dry_run: bool,
+    skip_tests: bool, skip_plugins: bool, skip_ide: bool, skip_docs: bool,
+) -> None:
+    """
+    Release every artefact: the PyPI plugins, then the IDE, then the docs site.
+
+    Order matters: the plugins publish to PyPI first; the IDE then bundles the published
+    flamapy version and ships (docker + Pages); finally the docs site is published (develop → main).
+
+    \b
+    Examples:
+        $ flamapy-dev version release-all 2.6.0.dev8 --dry-run
+        $ flamapy-dev version release-all 2.6.0.dev8
+        $ flamapy-dev version release-all 2.6.0.dev8 --skip-docs
+    """
+    parent_dir = ctx.obj["PARENT_DIR"]
+    ide_repo = ctx.obj.get("IDE_REPO", "flamapy-ide")
+    docs_repo = ctx.obj.get("DOCS_REPO", "flamapy_docs")
+
+    click.echo(f"\n{'='*60}")
+    click.echo(f"RELEASE-ALL v{new_version}")
+    click.echo('='*60)
+
+    if not skip_plugins:
+        ctx.invoke(release, new_version=new_version, dry_run=dry_run, skip_tests=skip_tests)
+    else:
+        click.echo("\n📋 Skipping PyPI plugin release")
+
+    if not skip_ide:
+        _release_ide(parent_dir, ide_repo, new_version, dry_run)
+    if not skip_docs:
+        _release_docs(parent_dir, docs_repo, dry_run)
+
+    click.echo(f"\n{'='*60}")
+    verb = "simulation complete" if dry_run else "completed"
+    click.echo(f"✓ Release-all v{new_version} {verb}!")
+    click.echo('='*60)
+
+
 version.add_command(show)
 version.add_command(check)
 version.add_command(bump)
 version.add_command(release)
+version.add_command(release_all)
