@@ -236,8 +236,11 @@ def test_merge_develop_to_main_restores_develop_on_failure():
         result = versions._merge_develop_to_main(Path("/tmp/repo"), "chore: release 2.6.0")
 
     assert result is None
-    # After a failed merge we must return to develop and never push the release branch.
+    # After a failed merge we must abort it, return to develop, and never push.
+    assert ["git", "merge", "--abort"] in calls
     assert ["git", "checkout", "develop"] in calls
+    # merge --abort must precede the checkout so the switch is not refused mid-merge.
+    assert calls.index(["git", "merge", "--abort"]) < calls.index(["git", "checkout", "develop"])
     assert ["git", "push", "origin", "main"] not in calls
     assert ["git", "push", "origin", "master"] not in calls
 

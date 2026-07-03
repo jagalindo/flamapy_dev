@@ -878,6 +878,12 @@ def _merge_develop_to_main(repo_dir: Path, message: str) -> str | None:
         result = subprocess.run(step, cwd=repo_dir, capture_output=True, text=True, check=False)
         if result.returncode != 0:
             click.echo(f"  ⚠ `{' '.join(step[1:])}` failed: {result.stderr.strip()}")
+            # A conflicted merge leaves the repo mid-merge on the release branch,
+            # where `git checkout develop` is refused — stranding it. Abort the
+            # merge first (a no-op if none is in progress) so develop is restored.
+            subprocess.run(
+                ["git", "merge", "--abort"], cwd=repo_dir, capture_output=True, check=False
+            )
             subprocess.run(["git", "checkout", "develop"], cwd=repo_dir, check=False)
             return None
     subprocess.run(["git", "checkout", "develop"], cwd=repo_dir, check=False)
