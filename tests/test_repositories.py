@@ -238,3 +238,159 @@ def test_tag_from_setup_missing_repo():
     assert result.exit_code == 0
     run_mock.assert_not_called()
     ver_mock.assert_not_called()
+
+
+def test_repo_slug_handles_ssh_and_https():
+    assert repositories._repo_slug("git@github.com:flamapy/flamapy_fw.git") == "flamapy/flamapy_fw"
+    assert repositories._repo_slug("https://github.com/flamapy/flamapy_fw.git") == "flamapy/flamapy_fw"
+    assert repositories._repo_slug("https://github.com/flamapy/flamapy_fw") == "flamapy/flamapy_fw"
+
+
+def test_rerun_failed_requires_gh(tmp_path):
+    runner = CliRunner()
+    obj = {"REPOS": {"repo1": "git@github.com:org/repo1.git"}, "PARENT_DIR": str(tmp_path)}
+    with patch("commands.repositories.shutil.which", return_value=None), patch(
+        "commands.repositories.subprocess.run"
+    ) as run_mock:
+        result = runner.invoke(repositories.rerun_failed, obj=obj)
+    assert result.exit_code == 0
+    assert "'gh' CLI not found" in result.output
+    run_mock.assert_not_called()
+
+
+def _gh_run_list_output(runs):
+    import json as _json
+
+    return MagicMock(returncode=0, stdout=_json.dumps(runs), stderr="")
+
+
+def test_rerun_failed_reruns_latest_failure_only(tmp_path):
+    """Only the newest failed run per (workflow, ref) is rerun; superseded failures are not."""
+    runner = CliRunner()
+    obj = {"REPOS": {"repo1": "git@github.com:org/repo1.git"}, "PARENT_DIR": str(tmp_path)}
+    runs = [
+        {"databaseId": 3, "status": "completed", "conclusion": "failure",
+         "name": "publish", "headBranch": "v2.0.0", "createdAt": "2026-07-03T10:00"},
+        {"databaseId": 2, "status": "completed", "conclusion": "failure",
+         "name": "publish", "headBranch": "v2.0.0", "createdAt": "2026-07-03T09:00"},
+        {"databaseId": 1, "status": "completed", "conclusion": "success",
+         "name": "tests", "headBranch": "develop", "createdAt": "2026-07-03T08:00"},
+    ]
+    calls = []
+
+    def side_effect(args, **kwargs):
+        calls.append(args)
+        if args[:3] == ["gh", "run", "list"]:
+            return _gh_run_list_output(runs)
+        if args[:3] == ["gh", "run", "rerun"]:
+            return MagicMock(returncode=0, stdout="", stderr="")
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    with patch("commands.repositories.shutil.which", return_value="/usr/bin/gh"), patch(
+        "commands.repositories.subprocess.run", side_effect=side_effect
+    ):
+        result = runner.invoke(repositories.rerun_failed, obj=obj)
+
+    assert result.exit_code == 0
+    rerun_calls = [c for c in calls if c[:3] == ["gh", "run", "rerun"]]
+    assert rerun_calls == [["gh", "run", "rerun", "3", "--failed", "--repo", "org/repo1"]]
+    assert "1 run(s) rerun" in result.output
+
+
+def test_rerun_failed_skips_repo_with_pending_pypi_deps(tmp_path):
+    runner = CliRunner()
+    repo_dir = tmp_path / "repo1"
+    repo_dir.mkdir()
+    (repo_dir / "pyproject.toml").write_text(
+        '[project]\nname = "flamapy-fm"\nversion = "2.0.0"\n'
+        'dependencies = ["flamapy-fw~=2.0.0"]\n',
+        encoding="utf-8",
+    )
+    obj = {"REPOS": {"repo1": "git@github.com:org/repo1.git"}, "PARENT_DIR": str(tmp_path)}
+    runs = [
+        {"databaseId": 5, "status": "completed", "conclusion": "failure",
+         "name": "publish", "headBranch": "v2.0.0", "createdAt": "2026-07-03T10:00"},
+    ]
+    calls = []
+
+    def side_effect(args, **kwargs):
+        calls.append(args)
+        return _gh_run_list_output(runs)
+
+    from packaging.requirements import Requirement
+
+    with patch("commands.repositories.shutil.which", return_value="/usr/bin/gh"), patch(
+        "commands.repositories.subprocess.run", side_effect=side_effect
+    ), patch(
+        "commands.repositories.unavailable_internal_requirements",
+        return_value=[Requirement("flamapy-fw~=2.0.0")],
+    ):
+        result = runner.invoke(repositories.rerun_failed, obj=obj)
+
+    assert result.exit_code == 0
+    assert all(c[:3] != ["gh", "run", "rerun"] for c in calls)
+    assert "Skipping" in result.output
+    assert "flamapy-fw~=2.0.0" in result.output
+    assert "repo(s) skipped" in result.output
+
+
+def test_rerun_failed_dry_run_does_not_rerun(tmp_path):
+    runner = CliRunner()
+    obj = {"REPOS": {"repo1": "git@github.com:org/repo1.git"}, "PARENT_DIR": str(tmp_path)}
+    runs = [
+        {"databaseId": 7, "status": "completed", "conclusion": "failure",
+         "name": "publish", "headBranch": "v2.0.0", "createdAt": "2026-07-03T10:00"},
+    ]
+    calls = []
+
+    def side_effect(args, **kwargs):
+        calls.append(args)
+        return _gh_run_list_output(runs)
+
+    with patch("commands.repositories.shutil.which", return_value="/usr/bin/gh"), patch(
+        "commands.repositories.subprocess.run", side_effect=side_effect
+    ):
+        result = runner.invoke(repositories.rerun_failed, ["--dry-run"], obj=obj)
+
+    assert result.exit_code == 0
+    assert all(c[:3] != ["gh", "run", "rerun"] for c in calls)
+    assert "[DRY RUN] Would rerun failed jobs of publish (v2.0.0, run 7)" in result.output
+
+
+def test_rerun_failed_ignores_stale_tag_runs(tmp_path):
+    """Failed runs on old version tags are skipped; current tag and branches are kept."""
+    runner = CliRunner()
+    repo_dir = tmp_path / "repo1"
+    repo_dir.mkdir()
+    (repo_dir / "pyproject.toml").write_text(
+        '[project]\nname = "flamapy-fw"\nversion = "2.6.0"\n',
+        encoding="utf-8",
+    )
+    obj = {"REPOS": {"repo1": "git@github.com:org/repo1.git"}, "PARENT_DIR": str(tmp_path)}
+    runs = [
+        {"databaseId": 10, "status": "completed", "conclusion": "failure",
+         "name": "publish", "headBranch": "v2.6.0", "createdAt": "2026-07-03T10:00"},
+        {"databaseId": 9, "status": "completed", "conclusion": "failure",
+         "name": "tests", "headBranch": "develop", "createdAt": "2026-07-03T09:00"},
+        {"databaseId": 8, "status": "completed", "conclusion": "failure",
+         "name": "publish", "headBranch": "v2.5.0", "createdAt": "2026-07-01T10:00"},
+    ]
+    calls = []
+
+    def side_effect(args, **kwargs):
+        calls.append(args)
+        if args[:3] == ["gh", "run", "list"]:
+            return _gh_run_list_output(runs)
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    with patch("commands.repositories.shutil.which", return_value="/usr/bin/gh"), patch(
+        "commands.repositories.subprocess.run", side_effect=side_effect
+    ), patch(
+        "commands.repositories.unavailable_internal_requirements", return_value=[]
+    ):
+        result = runner.invoke(repositories.rerun_failed, obj=obj)
+
+    assert result.exit_code == 0
+    rerun_ids = [c[3] for c in calls if c[:3] == ["gh", "run", "rerun"]]
+    assert rerun_ids == ["10", "9"]
+    assert "Ignoring stale tag run: publish (v2.5.0)" in result.output

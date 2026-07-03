@@ -213,6 +213,25 @@ def get_internal_requirements(
             if _normalize(r.name) in normalized]
 
 
+def unavailable_internal_requirements(
+        pyproject_file: str, internal_packages: set[str]) -> list[Requirement]:
+    """
+    Return the internal requirements of a pyproject.toml not yet on PyPI's simple index.
+
+    A single-shot (non-blocking) counterpart to wait_for_internal_requirements,
+    useful for deciding whether a failed CI run is worth retrying yet.
+
+    Args:
+        pyproject_file: Path to the pyproject.toml file.
+        internal_packages: Set of package names to check (e.g. {"flamapy-fw"}).
+
+    Returns:
+        List of Requirement objects that cannot currently be installed from PyPI.
+    """
+    return [r for r in get_internal_requirements(pyproject_file, internal_packages)
+            if not _package_available(r)]
+
+
 def wait_for_package(
     name: str, version: str, check_interval: int = 10, timeout: int = 1800
 ) -> None:

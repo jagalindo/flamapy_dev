@@ -135,6 +135,15 @@ flamapy-dev git commit-all "feat: add new feature"
 # Push all repos
 flamapy-dev git push-all
 
+# Show recent GitHub Actions runs for all repos (requires gh CLI)
+flamapy-dev git actions
+
+# Rerun failed CI jobs once the internal PyPI versions are available
+# (e.g. release runs that failed because a dependency wasn't published yet)
+flamapy-dev git rerun-failed --dry-run   # preview
+flamapy-dev git rerun-failed             # rerun failed jobs
+flamapy-dev git rerun-failed --wait      # block until PyPI has the versions
+
 # Tag all repos with a specific version
 flamapy-dev git tag_repo v2.1.0
 
