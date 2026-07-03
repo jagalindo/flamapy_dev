@@ -13,6 +13,7 @@ Example usage:
 
 import subprocess
 import re
+import time
 from pathlib import Path
 
 import click
@@ -22,6 +23,51 @@ from commands.pypi import (
     wait_for_internal_requirements,
     wait_for_package,
 )
+
+# Pause between consecutive tag pushes during a release. The simple-index check
+# guarantees a dependency's release exists, but pip can still miss it for a short
+# while (CDN propagation), which makes freshly triggered CI runs fail spuriously.
+TAG_DELAY_SECONDS = 60
+
+
+def normalize_version(version: str) -> str:
+    """
+    Strip a leading 'v'/'V' from a version string.
+
+    Tags are built as f"v{version}" and pyproject/PyPI versions are stored
+    unprefixed, so a "v2.6.0" argument would otherwise produce "vv2.6.0" tags
+    and inconsistent pins.
+
+    Example:
+        >>> normalize_version("v2.6.0.dev10")
+        '2.6.0.dev10'
+        >>> normalize_version("2.6.0.dev10")
+        '2.6.0.dev10'
+    """
+    return re.sub(r"^[vV](?=\d)", "", version.strip())
+
+
+def to_stable_version(version: str) -> str:
+    """
+    Drop a PEP 440 pre/dev/post suffix, yielding the plain release version.
+
+    Used to promote a development version to its stable counterpart: the
+    leading ``N(.N)*`` release segment is kept and everything from the first
+    non-numeric marker (``.dev``/``a``/``b``/``rc``/``.post``) is discarded.
+
+    Example:
+        >>> to_stable_version("2.6.0.dev11")
+        '2.6.0'
+        >>> to_stable_version("v2.6.0rc1")
+        '2.6.0'
+        >>> to_stable_version("2.6.0")
+        '2.6.0'
+    """
+    normalized = normalize_version(version)
+    m = re.match(r"^\d+(?:\.\d+)*", normalized)
+    if not m:
+        raise ValueError(f"Cannot derive a stable version from '{version}'")
+    return m.group(0)
 
 
 def extract_current_version(pyproject_path: Path) -> str:
@@ -398,6 +444,24 @@ def _apply_bump(
                 update_toml_dependencies(pyproject, pkg_map)
 
 
+def _bump_ide(parent_dir: str, ide_repo: str, new_version: str, dry_run: bool) -> None:
+    """Update the IDE's flamapy.version file to the new bundled flamapy version.
+
+    Note the file points at an unpublished flamapy until the release lands on
+    PyPI; `release-all` rewrites (and commits) it after waiting for publication.
+    """
+    repo_dir = Path(parent_dir) / ide_repo
+    version_file = repo_dir / "flamapy.version"
+    if not repo_dir.is_dir():
+        click.echo(f"{ide_repo}/: not found, skipping.")
+        return
+    current = version_file.read_text().strip() if version_file.exists() else "(none)"
+    click.echo(f"{ide_repo}/")
+    click.echo(f"  flamapy.version: {current} → {new_version}")
+    if not dry_run:
+        version_file.write_text(f"{new_version}\n", encoding="utf-8")
+
+
 @version.command()
 @click.argument("new_version")
 @click.option("--dry-run", "-n", is_flag=True, help="Show changes without modifying")
@@ -405,6 +469,9 @@ def _apply_bump(
 def bump(ctx: click.Context, new_version: str, dry_run: bool) -> None:
     """
     Bump all repos to the given version and update internal dependencies.
+
+    Also updates the IDE's flamapy.version file to the new version.
+    A leading "v" in the version is stripped automatically.
 
     \b
     Args:
@@ -417,6 +484,8 @@ def bump(ctx: click.Context, new_version: str, dry_run: bool) -> None:
     """
     parent_dir = ctx.obj["PARENT_DIR"]
     repos = ctx.obj["REPOS"]
+    ide_repo = ctx.obj.get("IDE_REPO", "flamapy-ide")
+    new_version = normalize_version(new_version)
 
     pkg_map, repo_info = _gather_repo_info(parent_dir, repos, new_version)
 
@@ -426,6 +495,7 @@ def bump(ctx: click.Context, new_version: str, dry_run: bool) -> None:
         click.echo(f"\nBumping {len(repo_info)} packages to v{new_version}...\n")
 
     _apply_bump(repo_info, pkg_map, dry_run)
+    _bump_ide(parent_dir, ide_repo, new_version, dry_run)
 
     if dry_run:
         click.echo("\n[DRY RUN] No files were modified.")
@@ -501,13 +571,25 @@ def _tag_all(
     Availability is checked against PyPI's *simple index* — the same index that
     pip (and therefore CI) resolves against — rather than the JSON API, which can
     report a version as available before it has propagated to the simple index.
+
+    On top of that check, a TAG_DELAY_SECONDS pause separates consecutive tag
+    pushes: even once the simple index lists a release, pip can briefly miss it
+    while it propagates, so tagging a dependent repo immediately can still
+    trigger a CI run that fails to install its dependencies.
     """
     click.echo("\n📋 Step 5: Creating and pushing tags...")
 
+    first = True
     for repo_name in repos:
         repo_dir = Path(parent_dir) / repo_name
         if not (repo_dir / ".git").is_dir():
             continue
+
+        if not first:
+            click.echo(f"  ⏸ waiting {TAG_DELAY_SECONDS}s before tagging {repo_name} "
+                       "(let PyPI propagate)...")
+            time.sleep(TAG_DELAY_SECONDS)
+        first = False
 
         tag = f"v{new_version}"
         pyproject = repo_dir / "pyproject.toml"
@@ -565,6 +647,7 @@ def release(ctx: click.Context, new_version: str, dry_run: bool, skip_tests: boo
     """
     parent_dir = ctx.obj["PARENT_DIR"]
     repos = ctx.obj["REPOS"]
+    new_version = normalize_version(new_version)
 
     click.echo(f"\n{'='*60}")
     click.echo(f"RELEASE v{new_version}")
@@ -682,6 +765,261 @@ def _release_docs(parent_dir: str, docs_repo: str, dry_run: bool) -> None:
     click.echo(f"  ✓ {docs_repo}: published (develop → main)")
 
 
+def _derive_stable_version(parent_dir: str, repos: dict[str, str]) -> str:
+    """Derive the single stable version implied by the repos' current versions.
+
+    Each repo's current dev version is reduced to its release segment (see
+    :func:`to_stable_version`); they must all agree, otherwise the caller should
+    pass the version explicitly.
+    """
+    stables: dict[str, str] = {}
+    for folder in repos:
+        pyproject = Path(parent_dir) / folder / "pyproject.toml"
+        if not pyproject.exists():
+            continue
+        try:
+            stables[folder] = to_stable_version(extract_current_version(pyproject))
+        except (ValueError, OSError):
+            continue
+    unique = set(stables.values())
+    if not unique:
+        raise click.ClickException("Could not read any package version to stabilize.")
+    if len(unique) > 1:
+        detail = ", ".join(f"{f}={v}" for f, v in sorted(stables.items()))
+        raise click.ClickException(
+            f"Repos disagree on the stable version ({detail}); pass it explicitly."
+        )
+    return next(iter(unique))
+
+
+def _stabilize_preconditions(parent_dir: str, repos: dict[str, str]) -> list[str]:
+    """Return reasons the repos are not ready to stabilize (empty list == ready).
+
+    Each repo must be on ``develop``, have a clean working tree, and not be
+    behind ``origin/develop``. Fetches first so the behind check is accurate.
+    """
+    problems: list[str] = []
+    for folder in repos:
+        repo_dir = Path(parent_dir) / folder
+        if not (repo_dir / ".git").is_dir():
+            continue
+        subprocess.run(["git", "fetch", "origin", "--quiet"], cwd=repo_dir, check=False)
+        current = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=repo_dir, capture_output=True, text=True, check=False,
+        ).stdout.strip()
+        if current != "develop":
+            problems.append(f"{folder}: on '{current or 'detached'}', expected 'develop'")
+        if subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=repo_dir, capture_output=True, text=True, check=False,
+        ).stdout.strip():
+            problems.append(f"{folder}: working tree is not clean")
+        behind = subprocess.run(
+            ["git", "rev-list", "--count", "develop..origin/develop"],
+            cwd=repo_dir, capture_output=True, text=True, check=False,
+        ).stdout.strip()
+        if behind.isdigit() and int(behind) > 0:
+            problems.append(
+                f"{folder}: develop is {behind} commit(s) behind origin/develop (pull first)"
+            )
+    return problems
+
+
+def _commit_repo(repo_dir: Path, message: str) -> bool:
+    """Stage and commit all changes in a repo. Returns False if nothing to commit."""
+    status = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=repo_dir, capture_output=True, text=True, check=False
+    )
+    if not status.stdout.strip():
+        return False
+    subprocess.run(["git", "add", "-A"], cwd=repo_dir, check=True)
+    subprocess.run(["git", "commit", "-m", message], cwd=repo_dir, check=True)
+    return True
+
+
+def _merge_develop_to_main(repo_dir: Path, message: str) -> bool:
+    """Checkout main, merge develop --no-ff, push main, then return to develop.
+
+    Returns True on success. On any failure the develop branch is restored and
+    False is returned so the caller can skip tagging this repo.
+    """
+    steps = [
+        ["git", "checkout", "main"],
+        ["git", "merge", "--no-ff", "develop", "-m", message],
+        ["git", "push", "origin", "main"],
+    ]
+    for step in steps:
+        result = subprocess.run(step, cwd=repo_dir, capture_output=True, text=True, check=False)
+        if result.returncode != 0:
+            click.echo(f"  ⚠ `{' '.join(step[1:])}` failed: {result.stderr.strip()}")
+            subprocess.run(["git", "checkout", "develop"], cwd=repo_dir, check=False)
+            return False
+    subprocess.run(["git", "checkout", "develop"], cwd=repo_dir, check=False)
+    return True
+
+
+def _tag_main(repo_dir: Path, tag: str, folder: str) -> None:
+    """Create ``tag`` on the local main ref and push it (idempotent)."""
+    existing = subprocess.run(
+        ["git", "tag", "-l", tag], cwd=repo_dir, capture_output=True, text=True, check=False
+    )
+    if existing.stdout.strip():
+        click.echo(f"  ⚠ {folder}: tag {tag} already exists, skipping create")
+    else:
+        subprocess.run(["git", "tag", tag, "main"], cwd=repo_dir, check=True)
+    push = subprocess.run(
+        ["git", "push", "origin", tag], cwd=repo_dir, capture_output=True, text=True, check=False
+    )
+    if push.returncode == 0:
+        click.echo(f"  ✓ {folder}: tagged {tag} on main")
+    else:
+        click.echo(f"  ⚠ {folder}: {push.stderr.strip() or 'tag already pushed'}")
+
+
+def _stabilize_repos(
+    parent_dir: str,
+    repos: dict[str, str],
+    new_version: str,
+    internal_packages: set[str],
+    dry_run: bool,
+) -> None:
+    """Commit the bump, merge develop→main, and tag v<version> on main, per repo.
+
+    Repos are processed in dependency order. Because the tag push triggers each
+    repo's stable PyPI publish, before tagging a repo we wait for its internal
+    flamapy dependencies to appear on the PyPI simple index (the same check as
+    :func:`_tag_all`), with a TAG_DELAY_SECONDS pause between consecutive repos
+    to let PyPI propagate.
+    """
+    click.echo("\n📋 Steps 3-5: Commit, merge develop→main, and tag...")
+    tag = f"v{new_version}"
+    message = f"chore: release {new_version}"
+    first = True
+    for folder in repos:
+        repo_dir = Path(parent_dir) / folder
+        if not (repo_dir / ".git").is_dir():
+            continue
+
+        click.echo(f"\n{folder}/")
+        if dry_run:
+            click.echo(f"  [DRY RUN] commit bump on develop, push develop, "
+                       f"merge develop→main + push, wait for deps, tag {tag} on main")
+            continue
+
+        _commit_repo(repo_dir, message)
+        subprocess.run(["git", "push", "origin", "develop"], cwd=repo_dir, check=False)
+
+        if not _merge_develop_to_main(repo_dir, message):
+            click.echo(f"  ✗ {folder}: merge to main failed, not tagging")
+            continue
+
+        if not first:
+            click.echo(f"  ⏸ waiting {TAG_DELAY_SECONDS}s before tagging {folder} "
+                       "(let PyPI propagate)...")
+            time.sleep(TAG_DELAY_SECONDS)
+        first = False
+
+        pyproject = repo_dir / "pyproject.toml"
+        if pyproject.exists():
+            pending = get_internal_requirements(str(pyproject), internal_packages)
+            if pending:
+                pending_str = ", ".join(str(r) for r in pending)
+                click.echo(f"  ⏳ {folder}: waiting for {pending_str} "
+                           "on the PyPI simple index...")
+                wait_for_internal_requirements(str(pyproject), internal_packages)
+
+        _tag_main(repo_dir, tag, folder)
+
+
+@version.command()
+@click.argument("new_version", required=False)
+@click.option("--dry-run", "-n", is_flag=True, help="Simulate without making changes")
+@click.option("--skip-tests", is_flag=True, help="Skip running tests before releasing")
+@click.option("--skip-docs", is_flag=True, help="Skip publishing the docs site")
+@click.option("--yes", "-y", is_flag=True, help="Do not prompt for confirmation")
+@click.pass_context
+def stabilize(  # noqa: PLR0913
+    ctx: click.Context, new_version: str | None, dry_run: bool,
+    skip_tests: bool, skip_docs: bool, yes: bool,
+) -> None:
+    """
+    Promote the current dev version to a stable release.
+
+    For every code repo (in dependency order) this drops the ``.devN`` suffix
+    (e.g. 2.6.0.dev11 → 2.6.0), commits the bump on develop, merges
+    develop → main, pushes both, and tags ``v<version>`` on main — which
+    triggers each repo's stable PyPI publish. Finally it publishes the docs
+    site (develop → main).
+
+    The stable version is derived from the repos' current versions unless one is
+    given explicitly.
+
+    \b
+    Examples:
+        $ flamapy-dev version stabilize --dry-run
+        $ flamapy-dev version stabilize
+        $ flamapy-dev version stabilize 2.6.0 --skip-docs
+    """
+    parent_dir = ctx.obj["PARENT_DIR"]
+    repos = ctx.obj["REPOS"]
+    docs_repo = ctx.obj.get("DOCS_REPO", "flamapy_docs")
+
+    stable = normalize_version(new_version) if new_version \
+        else _derive_stable_version(parent_dir, repos)
+
+    click.echo(f"\n{'='*60}")
+    click.echo(f"STABILIZE → v{stable}")
+    click.echo('='*60)
+    if dry_run:
+        click.echo("[DRY RUN MODE - no changes will be made]")
+
+    # Preconditions: every repo on develop, clean, and up to date with origin.
+    problems = _stabilize_preconditions(parent_dir, repos)
+    if problems:
+        click.echo("\n❌ Not ready to stabilize:\n")
+        for problem in problems:
+            click.echo(f"  • {problem}")
+        if not dry_run:
+            ctx.exit(1)
+        click.echo("\n[DRY RUN] Continuing despite the problems above.")
+
+    # Step 1: tests
+    if not skip_tests and not dry_run:
+        if not _run_tests(parent_dir, repos):
+            click.echo("Stabilize aborted. Fix tests and try again.")
+            ctx.exit(1)
+    else:
+        click.echo("\n📋 Step 1: Skipping tests")
+
+    # Step 2: bump to the stable version (pyproject + internal pins) in the working tree.
+    click.echo(f"\n📋 Step 2: Bumping versions → {stable}...")
+    pkg_map, repo_info = _gather_repo_info(parent_dir, repos, stable)
+    _apply_bump(repo_info, pkg_map, dry_run)
+
+    if not dry_run and not yes:
+        click.confirm(
+            f"\nProceed to commit, merge develop→main, and tag v{stable} across "
+            f"{len(repo_info)} repos (this triggers the stable PyPI publish)?",
+            abort=True,
+        )
+
+    # Steps 3-5: per repo — commit+push develop, merge→main+push, tag main (with PyPI wait).
+    internal_packages = set(pkg_map.keys())
+    _stabilize_repos(parent_dir, repos, stable, internal_packages, dry_run)
+
+    # Step 6: publish the docs site (develop → main).
+    if not skip_docs:
+        _release_docs(parent_dir, docs_repo, dry_run)
+
+    click.echo(f"\n{'='*60}")
+    verb = "simulation complete" if dry_run else "completed"
+    click.echo(f"✓ Stabilize v{stable} {verb}!")
+    if not dry_run:
+        click.echo(f"ℹ develop now sits at v{stable}; bump it to the next dev version when ready.")
+    click.echo('='*60)
+
+
 @version.command(name="release-all")
 @click.argument("new_version")
 @click.option("--dry-run", "-n", is_flag=True, help="Simulate without making changes")
@@ -709,6 +1047,7 @@ def release_all(  # noqa: PLR0913
     parent_dir = ctx.obj["PARENT_DIR"]
     ide_repo = ctx.obj.get("IDE_REPO", "flamapy-ide")
     docs_repo = ctx.obj.get("DOCS_REPO", "flamapy_docs")
+    new_version = normalize_version(new_version)
 
     click.echo(f"\n{'='*60}")
     click.echo(f"RELEASE-ALL v{new_version}")
@@ -734,4 +1073,5 @@ version.add_command(show)
 version.add_command(check)
 version.add_command(bump)
 version.add_command(release)
+version.add_command(stabilize)
 version.add_command(release_all)
