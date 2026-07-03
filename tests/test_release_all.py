@@ -199,14 +199,25 @@ def test_stabilize_repos_tags_master_repo_on_master():
     assert ["git", "checkout", "main"] not in git_calls
 
 
-def test_stabilize_repos_dry_run_touches_nothing():
+def test_stabilize_repos_dry_run_runs_no_mutating_git():
+    """Dry-run may query the release branch (read-only) but must not commit/merge/push/tag."""
+    from unittest.mock import MagicMock
+
+    calls = []
+
+    def fake_run(args, cwd=None, **kwargs):
+        calls.append(args)
+        return MagicMock(returncode=0, stdout="", stderr="")
+
     with patch.object(Path, "is_dir", return_value=True), \
-         patch("commands.versions.subprocess.run") as run_mock, \
+         patch("commands.versions.subprocess.run", side_effect=fake_run), \
          patch("commands.versions.time.sleep") as sleep_mock:
         versions._stabilize_repos(
             "/tmp", {"repo1": "u1", "repo2": "u2"}, "2.6.0", set(), dry_run=True
         )
-    run_mock.assert_not_called()
+
+    mutating = {"commit", "merge", "push", "tag", "checkout", "add"}
+    assert not [c for c in calls if c and c[0] == "git" and c[1] in mutating]
     sleep_mock.assert_not_called()
 
 

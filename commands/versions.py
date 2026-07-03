@@ -928,8 +928,9 @@ def _stabilize_repos(
 
         click.echo(f"\n{folder}/")
         if dry_run:
+            branch = _release_branch(repo_dir)
             click.echo(f"  [DRY RUN] commit bump on develop, push develop, "
-                       f"merge develop→main + push, wait for deps, tag {tag} on main")
+                       f"merge develop→{branch} + push, wait for deps, tag {tag} on {branch}")
             continue
 
         _commit_repo(repo_dir, message)
