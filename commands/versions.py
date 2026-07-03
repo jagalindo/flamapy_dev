@@ -826,6 +826,30 @@ def _stabilize_preconditions(parent_dir: str, repos: dict[str, str]) -> list[str
     return problems
 
 
+def _release_branch(repo_dir: Path) -> str:
+    """Return the repo's stable release branch: 'main' if present, else 'master'.
+
+    Checks local heads first, then the origin remote. Some flamapy repos still
+    use 'master' (older plugins) while newer ones use 'main', so the release
+    flow must not assume a single name. Falls back to 'main' when neither is
+    found (a later checkout then fails with a clear error).
+    """
+    for candidate in ("main", "master"):
+        local = subprocess.run(
+            ["git", "show-ref", "--verify", "--quiet", f"refs/heads/{candidate}"],
+            cwd=repo_dir, check=False,
+        )
+        if local.returncode == 0:
+            return candidate
+        remote = subprocess.run(
+            ["git", "ls-remote", "--exit-code", "--heads", "origin", candidate],
+            cwd=repo_dir, capture_output=True, check=False,
+        )
+        if remote.returncode == 0:
+            return candidate
+    return "main"
+
+
 def _commit_repo(repo_dir: Path, message: str) -> bool:
     """Stage and commit all changes in a repo. Returns False if nothing to commit."""
     status = subprocess.run(
@@ -838,41 +862,42 @@ def _commit_repo(repo_dir: Path, message: str) -> bool:
     return True
 
 
-def _merge_develop_to_main(repo_dir: Path, message: str) -> bool:
-    """Checkout main, merge develop --no-ff, push main, then return to develop.
+def _merge_develop_to_main(repo_dir: Path, message: str) -> str | None:
+    """Merge develop into the repo's release branch (main/master) and push it.
 
-    Returns True on success. On any failure the develop branch is restored and
-    False is returned so the caller can skip tagging this repo.
+    Returns the release branch name on success, or None on failure (after
+    restoring the develop branch) so the caller can skip tagging this repo.
     """
+    branch = _release_branch(repo_dir)
     steps = [
-        ["git", "checkout", "main"],
+        ["git", "checkout", branch],
         ["git", "merge", "--no-ff", "develop", "-m", message],
-        ["git", "push", "origin", "main"],
+        ["git", "push", "origin", branch],
     ]
     for step in steps:
         result = subprocess.run(step, cwd=repo_dir, capture_output=True, text=True, check=False)
         if result.returncode != 0:
             click.echo(f"  ⚠ `{' '.join(step[1:])}` failed: {result.stderr.strip()}")
             subprocess.run(["git", "checkout", "develop"], cwd=repo_dir, check=False)
-            return False
+            return None
     subprocess.run(["git", "checkout", "develop"], cwd=repo_dir, check=False)
-    return True
+    return branch
 
 
-def _tag_main(repo_dir: Path, tag: str, folder: str) -> None:
-    """Create ``tag`` on the local main ref and push it (idempotent)."""
+def _tag_main(repo_dir: Path, tag: str, folder: str, branch: str) -> None:
+    """Create ``tag`` on the local release-branch ref and push it (idempotent)."""
     existing = subprocess.run(
         ["git", "tag", "-l", tag], cwd=repo_dir, capture_output=True, text=True, check=False
     )
     if existing.stdout.strip():
         click.echo(f"  ⚠ {folder}: tag {tag} already exists, skipping create")
     else:
-        subprocess.run(["git", "tag", tag, "main"], cwd=repo_dir, check=True)
+        subprocess.run(["git", "tag", tag, branch], cwd=repo_dir, check=True)
     push = subprocess.run(
         ["git", "push", "origin", tag], cwd=repo_dir, capture_output=True, text=True, check=False
     )
     if push.returncode == 0:
-        click.echo(f"  ✓ {folder}: tagged {tag} on main")
+        click.echo(f"  ✓ {folder}: tagged {tag} on {branch}")
     else:
         click.echo(f"  ⚠ {folder}: {push.stderr.strip() or 'tag already pushed'}")
 
@@ -910,8 +935,9 @@ def _stabilize_repos(
         _commit_repo(repo_dir, message)
         subprocess.run(["git", "push", "origin", "develop"], cwd=repo_dir, check=False)
 
-        if not _merge_develop_to_main(repo_dir, message):
-            click.echo(f"  ✗ {folder}: merge to main failed, not tagging")
+        branch = _merge_develop_to_main(repo_dir, message)
+        if branch is None:
+            click.echo(f"  ✗ {folder}: merge to release branch failed, not tagging")
             continue
 
         if not first:
@@ -929,7 +955,7 @@ def _stabilize_repos(
                            "on the PyPI simple index...")
                 wait_for_internal_requirements(str(pyproject), internal_packages)
 
-        _tag_main(repo_dir, tag, folder)
+        _tag_main(repo_dir, tag, folder, branch)
 
 
 @version.command()

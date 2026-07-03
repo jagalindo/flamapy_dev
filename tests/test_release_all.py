@@ -154,6 +154,51 @@ def test_stabilize_repos_merges_develop_to_main_and_tags_main():
     assert ["git", "push", "origin", "v2.6.0"] in git_calls
 
 
+def test_release_branch_detects_main_and_master():
+    from unittest.mock import MagicMock
+
+    def make_fake(present):
+        def fake_run(args, cwd=None, **kwargs):
+            # `git show-ref --verify --quiet refs/heads/<b>` and
+            # `git ls-remote --exit-code --heads origin <b>` succeed only for `present`.
+            ref = args[-1]
+            branch = ref.rsplit("/", 1)[-1]
+            rc = 0 if branch == present else 1
+            return MagicMock(returncode=rc, stdout="", stderr="")
+        return fake_run
+
+    with patch("commands.versions.subprocess.run", side_effect=make_fake("main")):
+        assert versions._release_branch(Path("/tmp/repo")) == "main"
+    with patch("commands.versions.subprocess.run", side_effect=make_fake("master")):
+        assert versions._release_branch(Path("/tmp/repo")) == "master"
+
+
+def test_stabilize_repos_tags_master_repo_on_master():
+    from unittest.mock import MagicMock
+
+    calls = []
+
+    def fake_run(args, cwd=None, **kwargs):
+        calls.append(args)
+        # This repo only has 'master' (no 'main') on refs/heads or origin.
+        if args[:2] == ["git", "show-ref"] or args[:2] == ["git", "ls-remote"]:
+            rc = 0 if args[-1].rsplit("/", 1)[-1] == "master" else 1
+            return MagicMock(returncode=rc, stdout="", stderr="")
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    with patch.object(Path, "is_dir", return_value=True), \
+         patch.object(Path, "exists", return_value=False), \
+         patch("commands.versions.subprocess.run", side_effect=fake_run), \
+         patch("commands.versions.time.sleep"):
+        versions._stabilize_repos("/tmp", {"repo1": "u1"}, "2.6.0", set(), dry_run=False)
+
+    git_calls = [c for c in calls if c and c[0] == "git"]
+    assert ["git", "checkout", "master"] in git_calls
+    assert ["git", "push", "origin", "master"] in git_calls
+    assert ["git", "tag", "v2.6.0", "master"] in git_calls
+    assert ["git", "checkout", "main"] not in git_calls
+
+
 def test_stabilize_repos_dry_run_touches_nothing():
     with patch.object(Path, "is_dir", return_value=True), \
          patch("commands.versions.subprocess.run") as run_mock, \
@@ -177,12 +222,13 @@ def test_merge_develop_to_main_restores_develop_on_failure():
         return MagicMock(returncode=rc, stdout="", stderr="conflict")
 
     with patch("commands.versions.subprocess.run", side_effect=fake_run):
-        ok = versions._merge_develop_to_main(Path("/tmp/repo"), "chore: release 2.6.0")
+        result = versions._merge_develop_to_main(Path("/tmp/repo"), "chore: release 2.6.0")
 
-    assert ok is False
-    # After a failed merge we must return to develop and never push main.
+    assert result is None
+    # After a failed merge we must return to develop and never push the release branch.
     assert ["git", "checkout", "develop"] in calls
     assert ["git", "push", "origin", "main"] not in calls
+    assert ["git", "push", "origin", "master"] not in calls
 
 
 def test_stabilize_repos_pauses_between_repos_but_not_before_first():
