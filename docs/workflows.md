@@ -94,8 +94,9 @@ The release command automatically:
 2. **Bumps versions** in `setup.py` and `requirements.txt`
 3. **Commits** changes with message `chore: bump version to 2.2.0`
 4. **Pushes** commits to remote
-5. **Tags** each repo with `v2.2.0`, waiting for PyPI availability
-   between dependent packages
+5. **Tags** each repo with `v2.2.0`, back to back in dependency order. Each repo's
+   release workflow waits until its flamapy dependencies are on PyPI at that version
+   before publishing, so the uploads still land in dependency order
 
 ### Useful options
 

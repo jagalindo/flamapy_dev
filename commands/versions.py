@@ -13,21 +13,13 @@ Example usage:
 
 import subprocess
 import re
-import time
 from pathlib import Path
 
 import click
 
 from commands.pypi import (
-    get_internal_requirements,
-    wait_for_internal_requirements,
     wait_for_package,
 )
-
-# Pause between consecutive tag pushes during a release. The simple-index check
-# guarantees a dependency's release exists, but pip can still miss it for a short
-# while (CDN propagation), which makes freshly triggered CI runs fail spuriously.
-TAG_DELAY_SECONDS = 60
 
 
 def normalize_version(version: str) -> str:
@@ -558,49 +550,22 @@ def _tag_all(
     parent_dir: str,
     repos: dict[str, str],
     new_version: str,
-    internal_packages: set[str],
 ) -> None:
-    """Create and push tags for all repos.
+    """Create and push tags for all repos, in dependency order, back to back.
 
-    Before tagging each repo, waits until its internal flamapy dependencies are
-    available on PyPI.  External dependencies (setuptools, uvlparser, …) and
-    build-system requirements are intentionally ignored — only the packages that
-    are part of this coordinated release matter, because those are the ones whose
-    PyPI releases are triggered by the tag push itself.
-
-    Availability is checked against PyPI's *simple index* — the same index that
-    pip (and therefore CI) resolves against — rather than the JSON API, which can
-    report a version as available before it has propagated to the simple index.
-
-    On top of that check, a TAG_DELAY_SECONDS pause separates consecutive tag
-    pushes: even once the simple index lists a release, pip can briefly miss it
-    while it propagates, so tagging a dependent repo immediately can still
-    trigger a CI run that fails to install its dependencies.
+    Nothing waits here for PyPI: each repo's release workflow waits for its flamapy
+    dependencies to reach the PyPI simple index at this version before it publishes
+    (``.github/workflows/wait_for_pypi.py``), so the uploads still land in dependency
+    order. The CI runs a tag triggers install the siblings from git, not from PyPI.
     """
     click.echo("\n📋 Step 5: Creating and pushing tags...")
 
-    first = True
     for repo_name in repos:
         repo_dir = Path(parent_dir) / repo_name
         if not (repo_dir / ".git").is_dir():
             continue
 
-        if not first:
-            click.echo(f"  ⏸ waiting {TAG_DELAY_SECONDS}s before tagging {repo_name} "
-                       "(let PyPI propagate)...")
-            time.sleep(TAG_DELAY_SECONDS)
-        first = False
-
         tag = f"v{new_version}"
-        pyproject = repo_dir / "pyproject.toml"
-
-        if pyproject.exists():
-            pending = get_internal_requirements(str(pyproject), internal_packages)
-            if pending:
-                pending_str = ", ".join(str(r) for r in pending)
-                click.echo(f"  ⏳ {repo_name}: waiting for {pending_str} "
-                           f"on the PyPI simple index...")
-                wait_for_internal_requirements(str(pyproject), internal_packages)
 
         existing = subprocess.run(
             ["git", "tag", "-l", tag], cwd=repo_dir, capture_output=True, text=True, check=False
@@ -634,7 +599,7 @@ def release(ctx: click.Context, new_version: str, dry_run: bool, skip_tests: boo
     2. Bump all package versions
     3. Commit changes in all repos
     4. Push commits to remote
-    5. Create and push tags (waits for deps on the PyPI simple index)
+    5. Create and push tags (each release workflow waits for its deps on PyPI)
 
     \b
     Args:
@@ -666,7 +631,6 @@ def release(ctx: click.Context, new_version: str, dry_run: bool, skip_tests: boo
 
     # Step 2: Bump versions
     click.echo("\n📋 Step 2: Bumping versions...")
-    pkg_map, _ = _gather_repo_info(parent_dir, repos, new_version)
     ctx.invoke(bump, new_version=new_version, dry_run=dry_run)
 
     if dry_run:
@@ -675,10 +639,9 @@ def release(ctx: click.Context, new_version: str, dry_run: bool, skip_tests: boo
         return
 
     # Steps 3-5: Commit, push, and tag
-    internal_packages = set(pkg_map.keys())
     _commit_all(parent_dir, repos, f"chore: bump version to {new_version}")
     _push_all(parent_dir, repos)
-    _tag_all(parent_dir, repos, new_version, internal_packages)
+    _tag_all(parent_dir, repos, new_version)
 
     click.echo(f"\n{'='*60}")
     click.echo(f"✓ Release v{new_version} completed!")
@@ -912,21 +875,17 @@ def _stabilize_repos(
     parent_dir: str,
     repos: dict[str, str],
     new_version: str,
-    internal_packages: set[str],
     dry_run: bool,
 ) -> None:
     """Commit the bump, merge develop→main, and tag v<version> on main, per repo.
 
-    Repos are processed in dependency order. Because the tag push triggers each
-    repo's stable PyPI publish, before tagging a repo we wait for its internal
-    flamapy dependencies to appear on the PyPI simple index (the same check as
-    :func:`_tag_all`), with a TAG_DELAY_SECONDS pause between consecutive repos
-    to let PyPI propagate.
+    Repos are processed in dependency order, without waiting for PyPI: the tag push
+    triggers each repo's stable publish, and the release workflow itself waits for its
+    flamapy dependencies on the PyPI simple index before uploading (see :func:`_tag_all`).
     """
     click.echo("\n📋 Steps 3-5: Commit, merge develop→main, and tag...")
     tag = f"v{new_version}"
     message = f"chore: release {new_version}"
-    first = True
     for folder in repos:
         repo_dir = Path(parent_dir) / folder
         if not (repo_dir / ".git").is_dir():
@@ -936,7 +895,7 @@ def _stabilize_repos(
         if dry_run:
             branch = _release_branch(repo_dir)
             click.echo(f"  [DRY RUN] commit bump on develop, push develop, "
-                       f"merge develop→{branch} + push, wait for deps, tag {tag} on {branch}")
+                       f"merge develop→{branch} + push, tag {tag} on {branch}")
             continue
 
         _commit_repo(repo_dir, message)
@@ -946,21 +905,6 @@ def _stabilize_repos(
         if branch is None:
             click.echo(f"  ✗ {folder}: merge to release branch failed, not tagging")
             continue
-
-        if not first:
-            click.echo(f"  ⏸ waiting {TAG_DELAY_SECONDS}s before tagging {folder} "
-                       "(let PyPI propagate)...")
-            time.sleep(TAG_DELAY_SECONDS)
-        first = False
-
-        pyproject = repo_dir / "pyproject.toml"
-        if pyproject.exists():
-            pending = get_internal_requirements(str(pyproject), internal_packages)
-            if pending:
-                pending_str = ", ".join(str(r) for r in pending)
-                click.echo(f"  ⏳ {folder}: waiting for {pending_str} "
-                           "on the PyPI simple index...")
-                wait_for_internal_requirements(str(pyproject), internal_packages)
 
         _tag_main(repo_dir, tag, folder, branch)
 
@@ -1038,8 +982,7 @@ def stabilize(  # noqa: PLR0913
         )
 
     # Steps 3-5: per repo — commit+push develop, merge→main+push, tag main (with PyPI wait).
-    internal_packages = set(pkg_map.keys())
-    _stabilize_repos(parent_dir, repos, stable, internal_packages, dry_run)
+    _stabilize_repos(parent_dir, repos, stable, dry_run)
 
     # Step 6: publish the docs site (develop → main).
     if not skip_docs:

@@ -253,7 +253,8 @@ flamapy-dev version bump 2.2.0 --dry-run
 flamapy-dev version bump 2.2.0
 
 # Full automated release: bump → commit → push → tag
-# (waits for each package to appear on PyPI before tagging dependents)
+# (tags every repo back to back; each repo's release workflow waits for its
+#  flamapy dependencies on PyPI before publishing, so uploads stay in order)
 flamapy-dev version release 2.2.0
 
 # Release with options
@@ -317,7 +318,7 @@ flamapy-dev version release 2.2.0              # 2. Execute the release
 #   - Bump setup.py and requirements.txt versions
 #   - Commit changes
 #   - Push to remote
-#   - Create and push tags (waiting for PyPI between dependent packages)
+#   - Create and push tags (no waiting: the release workflows wait for PyPI)
 ```
 
 ## Configuration

@@ -141,10 +141,8 @@ def test_stabilize_repos_merges_develop_to_main_and_tags_main():
     with patch.object(Path, "is_dir", return_value=True), \
          patch.object(Path, "exists", return_value=False), \
          patch("commands.versions.subprocess.run", side_effect=fake_run), \
-         patch("commands.versions.time.sleep"):
-        versions._stabilize_repos(
-            "/tmp", {"repo1": "u1"}, "2.6.0", set(), dry_run=False
-        )
+         patch("commands.pypi.time.sleep"):
+        versions._stabilize_repos("/tmp", {"repo1": "u1"}, "2.6.0", dry_run=False)
 
     git_calls = [c for c in calls if c and c[0] == "git"]
     assert ["git", "checkout", "main"] in git_calls
@@ -189,8 +187,8 @@ def test_stabilize_repos_tags_master_repo_on_master():
     with patch.object(Path, "is_dir", return_value=True), \
          patch.object(Path, "exists", return_value=False), \
          patch("commands.versions.subprocess.run", side_effect=fake_run), \
-         patch("commands.versions.time.sleep"):
-        versions._stabilize_repos("/tmp", {"repo1": "u1"}, "2.6.0", set(), dry_run=False)
+         patch("commands.pypi.time.sleep"):
+        versions._stabilize_repos("/tmp", {"repo1": "u1"}, "2.6.0", dry_run=False)
 
     git_calls = [c for c in calls if c and c[0] == "git"]
     assert ["git", "checkout", "master"] in git_calls
@@ -211,9 +209,9 @@ def test_stabilize_repos_dry_run_runs_no_mutating_git():
 
     with patch.object(Path, "is_dir", return_value=True), \
          patch("commands.versions.subprocess.run", side_effect=fake_run), \
-         patch("commands.versions.time.sleep") as sleep_mock:
+         patch("commands.pypi.time.sleep") as sleep_mock:
         versions._stabilize_repos(
-            "/tmp", {"repo1": "u1", "repo2": "u2"}, "2.6.0", set(), dry_run=True
+            "/tmp", {"repo1": "u1", "repo2": "u2"}, "2.6.0", dry_run=True
         )
 
     mutating = {"commit", "merge", "push", "tag", "checkout", "add"}
@@ -245,38 +243,47 @@ def test_merge_develop_to_main_restores_develop_on_failure():
     assert ["git", "push", "origin", "master"] not in calls
 
 
-def test_stabilize_repos_pauses_between_repos_but_not_before_first():
-    """A TAG_DELAY_SECONDS pause separates consecutive repos' tag pushes only."""
+def test_stabilize_repos_tags_back_to_back_without_polling_pypi():
+    """The release workflows wait for their dependencies on PyPI, so tagging never does."""
     from unittest.mock import MagicMock
 
+    tags = []
+
     def fake_run(args, cwd=None, **kwargs):
+        if args[:2] == ["git", "tag"] and len(args) > 2:
+            tags.append(args[2])
         return MagicMock(returncode=0, stdout="", stderr="")
 
     with patch.object(Path, "is_dir", return_value=True), \
-         patch.object(Path, "exists", return_value=False), \
          patch("commands.versions.subprocess.run", side_effect=fake_run), \
-         patch("commands.versions.time.sleep") as sleep_mock:
+         patch("commands.pypi.time.sleep") as sleep_mock, \
+         patch("commands.pypi.request.urlopen") as pypi_mock:
         versions._stabilize_repos(
-            "/tmp", {"r1": "u1", "r2": "u2", "r3": "u3"}, "2.6.0", set(), dry_run=False
+            "/tmp", {"r1": "u1", "r2": "u2", "r3": "u3"}, "2.6.0", dry_run=False
         )
 
-    assert sleep_mock.call_count == 2
-    sleep_mock.assert_called_with(versions.TAG_DELAY_SECONDS)
+    assert tags.count("v2.6.0") == 3
+    sleep_mock.assert_not_called()
+    pypi_mock.assert_not_called()
 
 
-def test_tag_all_pauses_between_repos_but_not_before_first():
-    """_tag_all sleeps TAG_DELAY_SECONDS between consecutive tag pushes only."""
+def test_tag_all_tags_back_to_back_without_polling_pypi():
+    """_tag_all pushes every tag in order with no pause and no PyPI check."""
     from unittest.mock import MagicMock
 
+    pushed = []
+
     def fake_run(args, cwd=None, **kwargs):
+        if args[:3] == ["git", "push", "origin"]:
+            pushed.append(cwd.name)
         return MagicMock(returncode=0, stdout="", stderr="")
 
     with patch.object(Path, "is_dir", return_value=True), \
-         patch.object(Path, "exists", return_value=False), \
          patch("commands.versions.subprocess.run", side_effect=fake_run), \
-         patch("commands.versions.time.sleep") as sleep_mock:
-        versions._tag_all("/tmp", {"repo1": "u1", "repo2": "u2", "repo3": "u3"},
-                          "2.0.0", set())
+         patch("commands.pypi.time.sleep") as sleep_mock, \
+         patch("commands.pypi.request.urlopen") as pypi_mock:
+        versions._tag_all("/tmp", {"repo1": "u1", "repo2": "u2", "repo3": "u3"}, "2.0.0")
 
-    assert sleep_mock.call_count == 2
-    sleep_mock.assert_called_with(versions.TAG_DELAY_SECONDS)
+    assert pushed == ["repo1", "repo2", "repo3"]
+    sleep_mock.assert_not_called()
+    pypi_mock.assert_not_called()
